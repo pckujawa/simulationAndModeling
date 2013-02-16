@@ -24,16 +24,6 @@ class MyTwoBody(object):
         # Turn the list to an array:
         states = np.array(states)
 
-        # Now array slices get all positions and velocities:
-        # x1,y1,vx1,vy1,x2,y2,vx2,vy2 = state
-        self.x1s  = states[:,0]
-        self.y1s  = states[:,1]
-        self.vx1s = states[:,2]
-        self.vy1s = states[:,3]
-        self.x2s  = states[:,4]
-        self.y2s  = states[:,5]
-        self.vx2s = states[:,6]
-        self.vy2s = states[:,7]
         self.times = pl.frange(0, elapsed_time, dt)
 
         # store vars in the object for easier inspection
