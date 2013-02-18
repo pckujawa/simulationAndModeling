@@ -44,7 +44,7 @@ class TwoBodyResult(object):
 
 ## Problem setup
 t_end = 100  # years
-step_cnt = 1000
+step_cnt = 500
 times = np.linspace(0.0, t_end, step_cnt)
 yinit = np.array(
     [2.52, 0, 0, math.sqrt(GM/2.52), 5.24, 0, 0, math.sqrt(GM/5.24)])  # initial values
@@ -69,31 +69,72 @@ def get_energy_M_ratios(r):
     #NOTE: The r's are practically constant because of the stable orbit
     r1s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x1s, r.y1s]))
     r2s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x2s, r.y2s]))
-    r21s = abs(r2s - r1s)
+    r21s = r2s - r1s
     m1_kinetics = 0.5 * ratio_m1_M * v1s_squared
     m2_kinetics = 0.5 * ratio_m2_M * v2s_squared
     potentials = GM * (ratio_m1_M / r1s + ratio_m2_M / r2s + ratio_m1_M * ratio_m2_M / r21s)
     ratio_e_Ms = m1_kinetics + m2_kinetics - potentials
     return ratio_e_Ms
 
+def get_momentum_M_ratios(r):
+    m1_term = ratio_m1_M * (r.x1s * r.vy1s - r.y1s * r.vx1s)
+    m2_term = ratio_m2_M * (r.x2s * r.vy2s - r.y2s * r.vx2s)
+    ratio_L_Ms = m1_term + m2_term
+    return ratio_L_Ms
+
+
 # Plot the results
+def plot_results(results, ax=None):
+    if ax is None:
+        ax = pl
+    ax.plot(results.x1s, results.y1s, 'bo-', label='m1')
+    ax.plot(results.x2s, results.y2s, 'ro-', label='m2')
+    ax.legend(loc='best')
 
-def plot_results(problem):
-    pl.plot(problem.x1s, problem.y1s, 'bo-', label='m1')
-    pl.plot(problem.x2s, problem.y2s, 'ro-', label='m2')
-    pl.legend(loc='best')
+results_map = {'my': my_ode_results, 'scipy': scipy_ode_results}
+ratios_energy_M = {
+    label: get_energy_M_ratios(ode_results) for
+    label, ode_results in
+    results_map.iteritems()}
+percent_energy_changes = {
+    label: 100 * (E_M - E_M[0]) for
+    label, E_M in ratios_energy_M.iteritems()}
+ratios_momentum_M = {
+    label: get_momentum_M_ratios(ode_results) for
+    label, ode_results in
+    results_map.iteritems()}
+percent_momentum_changes = {
+    label: 100 * (L_M - L_M[0]) for
+    label, L_M in ratios_momentum_M.iteritems()}
 
-my_ratios_energy_M = get_energy_M_ratios(my_ode_results)
-scipy_ratios_energy_M = get_energy_M_ratios(scipy_ode_results)
-percent_energy_changes = [
-    100 * (ratios_energy_M - ratios_energy_M[0]) for ratios_energy_M in (
-        my_ratios_energy_M, scipy_ratios_energy_M)]
 
 def do_plots():
+    fig = pl.figure(figsize=(5,10))
+    fig.subplots_adjust(bottom=0.025, left=0.025, top = 0.95, right=0.95)
     pl.subplot(2,1,1)
     pl.title('My ODE, RK, $dt=%.3f$' % dt)
     plot_results(my_ode_results)
     pl.subplot(2,1,2)
     pl.title('SciPy ODE, $dt=%.3f$' % dt)
     plot_results(scipy_ode_results)
+    pl.savefig('pat_orbits.png')
+    pl.close()
+
+    fig = pl.figure(figsize=(14,8))
+    fig.subplots_adjust(bottom=0.025, left=0.025, top = 0.95, right=0.95)
+    ax = pl.subplot2grid((2,2), (0, 0), rowspan=2)
+    pl.title('SciPy ODE, $dt=%.3f$' % dt)
+    plot_results(scipy_ode_results, ax)
+    ax = pl.subplot2grid((2,2), (0, 1))
+    pl.title('Energy')
+    pl.ylabel('percent $\Delta E/M$')
+    pl.plot(times, percent_energy_changes['scipy'], 'ko-', markersize=2, linewidth=0.5);
+    ax = pl.subplot2grid((2,2), (1, 1))
+    pl.title('Momentum')
+    pl.ylabel('percent $\Delta L/M$')
+    pl.plot(times, percent_momentum_changes['scipy'], 'ko-', markersize=1, linewidth=0.2)
+    ax.yaxis.set_major_locator(pl.MaxNLocator(nbins=4))
+    pl.savefig('pat_orbits_energies_momentums.png')
     pl.show()
+
+do_plots()
