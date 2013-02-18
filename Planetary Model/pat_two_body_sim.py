@@ -56,8 +56,8 @@ my_ode = MyTwoBody(yinit, two_body)\
 my_ode_results = TwoBodyResult(my_ode.states)
 
 ## Python ODE
-atol = None
-rtol = None
+atol = 1e-8
+rtol = 1e-8
 states = odeint(two_body, yinit, times, atol=atol, rtol=rtol)
 scipy_ode_results = TwoBodyResult(states)
 
@@ -99,7 +99,6 @@ def plot_results(results, ax=None):
         ax = pl
     ax.plot(results.x1s, results.y1s, 'bo-', label='m1')
     ax.plot(results.x2s, results.y2s, 'ro-', label='m2')
-    ax.legend(loc='best')
 
 
 results_map = {'my': my_ode_results, 'scipy': scipy_ode_results}
@@ -121,21 +120,24 @@ percent_momentum_changes = {
 
 def do_plots():
     fig = pl.figure(figsize=(5,10))
-    fig.subplots_adjust(bottom=0.025, left=0.025, top = 0.95, right=0.95)
+    fig.subplots_adjust(bottom=0.03, left=0.04, top = 0.95, right=0.95)
     pl.subplot(2,1,1)
     pl.title('My ODE, RK, $dt=%.3f$' % dt)
     plot_results(my_ode_results)
     pl.subplot(2,1,2)
-    pl.title('SciPy ODE, $dt=%.3f$' % dt)
+    pl.title('SciPy ODE, $dt={:.3f}$, a/rtol={}/{}'.format(dt, atol, rtol))
     plot_results(scipy_ode_results)
-    pl.savefig('pat_orbits.png')
+    pl.legend(loc='best')
+    pl.savefig('pat_orbits_atol={}_rtol={}.png'.format(
+        atol, rtol))
     pl.close()
 
     fig = pl.figure(figsize=(14,8))
-    fig.subplots_adjust(bottom=0.025, left=0.025, top = 0.95, right=0.95)
+    fig.subplots_adjust(bottom=0.03, left=0.04, top = 0.95, right=0.95)
     ax = pl.subplot2grid((2,2), (0, 0), rowspan=2)
-    pl.title('SciPy ODE, $dt=%.3f$' % dt)
+    pl.title('SciPy ODE, $dt={:.3f}$, a/rtol={}/{}'.format(dt, atol, rtol))
     plot_results(scipy_ode_results, ax)
+    pl.legend(loc='best')
     ax = pl.subplot2grid((2,2), (0, 1))
     pl.title('Energy')
     pl.ylabel('percent $\Delta E/M$')
@@ -145,7 +147,7 @@ def do_plots():
     pl.ylabel('percent $\Delta L/M$')
     pl.plot(times, percent_momentum_changes['scipy'], 'ko-', markersize=1, linewidth=0.2)
     ax.yaxis.set_major_locator(pl.MaxNLocator(nbins=4))
-    pl.savefig('pat_orbits_energies_momentums_(atol={},rtol={}).png'.format(
+    pl.savefig('pat_orbits_energies_momentums_atol={}_rtol={}.png'.format(
         atol, rtol))
     pl.show()
 
