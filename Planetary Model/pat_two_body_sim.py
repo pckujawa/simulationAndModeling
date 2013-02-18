@@ -56,25 +56,35 @@ my_ode = MyTwoBody(yinit, two_body)\
 my_ode_results = TwoBodyResult(my_ode.states)
 
 ## Python ODE
-states = odeint(two_body, yinit, times)
+atol = None
+rtol = None
+states = odeint(two_body, yinit, times, atol=atol, rtol=rtol)
 scipy_ode_results = TwoBodyResult(states)
 
+
 ## Energy and momentum
-def get_energy_M_ratios(r):
-    '''r: result object'''
-    v1s_matrix = np.array([r.vx1s, r.vy1s])  # matrix now
-    v1s_squared = np.apply_along_axis(np.linalg.norm, 0, v1s_matrix)**2  # columns, see http://stackoverflow.com/questions/7741878/how-to-apply-numpy-linalg-norm-to-each-row-of-a-matrix
-    v2s_matrix = np.array([r.vx2s, r.vy2s])
-    v2s_squared = np.apply_along_axis(np.linalg.norm, 0, v2s_matrix)**2
-    #NOTE: The r's are practically constant because of the stable orbit
-    r1s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x1s, r.y1s]))
-    r2s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x2s, r.y2s]))
-    r21s = r2s - r1s
-    m1_kinetics = 0.5 * ratio_m1_M * v1s_squared
-    m2_kinetics = 0.5 * ratio_m2_M * v2s_squared
-    potentials = GM * (ratio_m1_M / r1s + ratio_m2_M / r2s + ratio_m1_M * ratio_m2_M / r21s)
-    ratio_e_Ms = m1_kinetics + m2_kinetics - potentials
-    return ratio_e_Ms
+class EnergyCalculation(object):
+    def __init__(self, r):
+        '''r: result object'''
+        v1s_matrix = np.array([r.vx1s, r.vy1s])  # matrix now
+        v1s_squared = np.apply_along_axis(np.linalg.norm, 0, v1s_matrix)**2  # columns, see http://stackoverflow.com/questions/7741878/how-to-apply-numpy-linalg-norm-to-each-row-of-a-matrix
+        v2s_matrix = np.array([r.vx2s, r.vy2s])
+        v2s_squared = np.apply_along_axis(np.linalg.norm, 0, v2s_matrix)**2
+        #NOTE: The r's are practically constant because of the stable orbit
+        r1s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x1s, r.y1s]))
+        r2s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x2s, r.y2s]))
+        r21s_matrix = np.array([r.x2s-r.x1s, r.y2s-r.y1s])
+        r21s = np.apply_along_axis(np.linalg.norm, 0, r21s_matrix)
+        m1_kinetics = 0.5 * ratio_m1_M * v1s_squared
+        m2_kinetics = 0.5 * ratio_m2_M * v2s_squared
+        potentials = GM * (ratio_m1_M / r1s + ratio_m2_M / r2s + ratio_m1_M * ratio_m2_M / r21s)
+        ratio_e_Ms = m1_kinetics + m2_kinetics - potentials
+        # Copy vars to object
+        l = locals().copy()
+        del l['self']
+        for key,value in l.iteritems():
+            setattr(self, key, value)
+
 
 def get_momentum_M_ratios(r):
     m1_term = ratio_m1_M * (r.x1s * r.vy1s - r.y1s * r.vx1s)
@@ -91,20 +101,21 @@ def plot_results(results, ax=None):
     ax.plot(results.x2s, results.y2s, 'ro-', label='m2')
     ax.legend(loc='best')
 
+
 results_map = {'my': my_ode_results, 'scipy': scipy_ode_results}
 ratios_energy_M = {
-    label: get_energy_M_ratios(ode_results) for
+    label: EnergyCalculation(ode_results).ratio_e_Ms for
     label, ode_results in
     results_map.iteritems()}
 percent_energy_changes = {
-    label: 100 * (E_M - E_M[0]) for
+    label: 100 * (E_M - E_M[0]) / E_M[0] for
     label, E_M in ratios_energy_M.iteritems()}
 ratios_momentum_M = {
     label: get_momentum_M_ratios(ode_results) for
     label, ode_results in
     results_map.iteritems()}
 percent_momentum_changes = {
-    label: 100 * (L_M - L_M[0]) for
+    label: 100 * (L_M - L_M[0]) / L_M[0] for
     label, L_M in ratios_momentum_M.iteritems()}
 
 
@@ -128,13 +139,14 @@ def do_plots():
     ax = pl.subplot2grid((2,2), (0, 1))
     pl.title('Energy')
     pl.ylabel('percent $\Delta E/M$')
-    pl.plot(times, percent_energy_changes['scipy'], 'ko-', markersize=2, linewidth=0.5);
+    pl.plot(times, percent_energy_changes['scipy'], 'ko-', markersize=1, linewidth=0.2);
     ax = pl.subplot2grid((2,2), (1, 1))
     pl.title('Momentum')
     pl.ylabel('percent $\Delta L/M$')
     pl.plot(times, percent_momentum_changes['scipy'], 'ko-', markersize=1, linewidth=0.2)
     ax.yaxis.set_major_locator(pl.MaxNLocator(nbins=4))
-    pl.savefig('pat_orbits_energies_momentums.png')
+    pl.savefig('pat_orbits_energies_momentums_(atol={},rtol={}).png'.format(
+        atol, rtol))
     pl.show()
 
 do_plots()
