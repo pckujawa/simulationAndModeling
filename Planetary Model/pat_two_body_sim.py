@@ -15,8 +15,8 @@ from pat_two_body import MyTwoBody
 
 # Notice that parameters are global.
 GM = 4 * math.pi**2
-ratio_m1_M    = 0.001
-ratio_m2_M    = 0.04
+ratio_m1_M = 0.001
+ratio_m2_M = 0.04
 
 def two_body(state, t):  #OUCH! The signature is reversed for odeint!
     # s_1 = (x1, y1, vx1, vy1), s_2 = (x2, y2, vx2, vy1)
@@ -59,6 +59,23 @@ my_ode_results = TwoBodyResult(my_ode.states)
 states = odeint(two_body, yinit, times)
 scipy_ode_results = TwoBodyResult(states)
 
+## Energy and momentum
+def get_energy_M_ratios(r):
+    '''r: result object'''
+    v1s_matrix = np.array([r.vx1s, r.vy1s])  # matrix now
+    v1s_squared = np.apply_along_axis(np.linalg.norm, 0, v1s_matrix)**2  # columns, see http://stackoverflow.com/questions/7741878/how-to-apply-numpy-linalg-norm-to-each-row-of-a-matrix
+    v2s_matrix = np.array([r.vx2s, r.vy2s])
+    v2s_squared = np.apply_along_axis(np.linalg.norm, 0, v2s_matrix)**2
+    #NOTE: The r's are practically constant because of the stable orbit
+    r1s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x1s, r.y1s]))
+    r2s = np.apply_along_axis(np.linalg.norm, 0, np.array([r.x2s, r.y2s]))
+    r21s = abs(r2s - r1s)
+    m1_kinetics = 0.5 * ratio_m1_M * v1s_squared
+    m2_kinetics = 0.5 * ratio_m2_M * v2s_squared
+    potentials = GM * (ratio_m1_M / r1s + ratio_m2_M / r2s + ratio_m1_M * ratio_m2_M / r21s)
+    ratio_e_Ms = m1_kinetics + m2_kinetics - potentials
+    return ratio_e_Ms
+
 # Plot the results
 
 def plot_results(problem):
@@ -66,10 +83,17 @@ def plot_results(problem):
     pl.plot(problem.x2s, problem.y2s, 'ro-', label='m2')
     pl.legend(loc='best')
 
-pl.subplot(2,1,1)
-pl.title('My ODE, RK, $dt=%.3f$' % dt)
-plot_results(my_ode_results)
-pl.subplot(2,1,2)
-pl.title('SciPy ODE, $dt=%.3f$' % dt)
-plot_results(scipy_ode_results)
-pl.show()
+my_ratios_energy_M = get_energy_M_ratios(my_ode_results)
+scipy_ratios_energy_M = get_energy_M_ratios(scipy_ode_results)
+percent_energy_changes = [
+    100 * (ratios_energy_M - ratios_energy_M[0]) for ratios_energy_M in (
+        my_ratios_energy_M, scipy_ratios_energy_M)]
+
+def do_plots():
+    pl.subplot(2,1,1)
+    pl.title('My ODE, RK, $dt=%.3f$' % dt)
+    plot_results(my_ode_results)
+    pl.subplot(2,1,2)
+    pl.title('SciPy ODE, $dt=%.3f$' % dt)
+    plot_results(scipy_ode_results)
+    pl.show()
