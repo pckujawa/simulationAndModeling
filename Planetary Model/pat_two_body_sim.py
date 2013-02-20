@@ -19,8 +19,12 @@ ratio_m1_M = 0.001
 ratio_m2_M = 0.04
 
 def two_body(state, t):  #OUCH! The signature is reversed for odeint!
-    # s_1 = (x1, y1, vx1, vy1), s_2 = (x2, y2, vx2, vy1)
+    '''Return the derivatives of a state which has two masses orbiting a third, large, fixed mass at x,y=0,0.
+        :state: array of ordered values: x1,y1,vx1,vy1,x2,y2,vx2,vy2
+        :t: current time in simulation
+    '''
     x1,y1,vx1,vy1,x2,y2,vx2,vy2 = state
+    # We're given the velocities, so we just need to calc the accelerations
     r1_sqrt_cube  = (x1**2 + y1**2)**(1.5)
     r2_sqrt_cube  = (x2**2 + y2**2)**(1.5)
     r21_sqrt_cube = ((x2-x1)**2 + (y2-y1)**2)**(1.5)
@@ -46,6 +50,8 @@ class TwoBodyResult(object):
 t_end = 100  # years
 step_cnt = 500
 times = np.linspace(0.0, t_end, step_cnt)
+
+# Two body
 yinit = np.array(
     [2.52, 0, 0, math.sqrt(GM/2.52), 5.24, 0, 0, math.sqrt(GM/5.24)])  # initial values
 
@@ -77,9 +83,10 @@ class EnergyCalculation(object):
         r21s = np.apply_along_axis(np.linalg.norm, 0, r21s_matrix)
         m1_kinetics = 0.5 * ratio_m1_M * v1s_squared
         m2_kinetics = 0.5 * ratio_m2_M * v2s_squared
-        potentials = GM * (ratio_m1_M / r1s + ratio_m2_M / r2s + ratio_m1_M * ratio_m2_M / r21s)
-        ratio_e_Ms = m1_kinetics + m2_kinetics - potentials
-        # Copy vars to object
+        potentials = -GM * (ratio_m1_M / r1s + ratio_m2_M / r2s + ratio_m1_M * ratio_m2_M / r21s)
+        ratio_e_Ms = m1_kinetics + m2_kinetics + potentials
+
+        # Copy vars to this object, e.g. so we can do `ecObj.ratio_e_Ms`
         l = locals().copy()
         del l['self']
         for key,value in l.iteritems():
@@ -136,15 +143,19 @@ def do_plots():
     fig.subplots_adjust(bottom=0.03, left=0.04, top = 0.95, right=0.95)
     ax = pl.subplot2grid((2,2), (0, 0), rowspan=2)
     pl.title('SciPy ODE, $dt={:.3f}$, a/rtol={}/{}'.format(dt, atol, rtol))
+    pl.ylabel('AU')
+    pl.xlabel('AU')
     plot_results(scipy_ode_results, ax)
     pl.legend(loc='best')
     ax = pl.subplot2grid((2,2), (0, 1))
     pl.title('Energy')
     pl.ylabel('percent $\Delta E/M$')
+    pl.xlabel('Time')
     pl.plot(times, percent_energy_changes['scipy'], 'ko-', markersize=1, linewidth=0.2);
     ax = pl.subplot2grid((2,2), (1, 1))
     pl.title('Momentum')
     pl.ylabel('percent $\Delta L/M$')
+    pl.xlabel('Time')
     pl.plot(times, percent_momentum_changes['scipy'], 'ko-', markersize=1, linewidth=0.2)
     ax.yaxis.set_major_locator(pl.MaxNLocator(nbins=4))
     pl.savefig('pat_orbits_energies_momentums_atol={}_rtol={}.png'.format(
