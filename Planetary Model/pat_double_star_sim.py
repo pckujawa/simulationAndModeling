@@ -9,6 +9,7 @@ from __future__ import division
 from scipy.integrate import odeint  # for integrate.odeint
 import numpy as np
 import pylab as pl
+from matplotlib.animation import FuncAnimation  # v1.1+
 import math
 import pat_ode_solvers as myode
 
@@ -20,7 +21,7 @@ class Struct(object):
 # Notice that parameters are global.
 GM = 4 * math.pi**2
 
-class Star(object):
+class Star():
     x = 0
     y = 0
 
@@ -48,7 +49,7 @@ class DoubleStarResult(object):
 
 ## Problem setup
 t_end = 100.0  # years
-step_cnt = 500
+step_cnt = 1000
 dt = t_end / step_cnt
 times = np.linspace(0.0, t_end, step_cnt)
 
@@ -83,11 +84,49 @@ def do_plots():
 ##         xytext=(-60, 40), textcoords='offset points', fontsize=16,
 ##         arrowprops=dict(arrowstyle="->", connectionstyle="arc3,rad=-.5"))
 
-    pl.plot(results.xs, results.ys, 'ko-', markersize=1, linewidth=0.1)
+    pl.plot(results.xs, results.ys, 'o-', color='black', markersize=1, linewidth=0.1)
+
+    info = '''Initial Conditions
+$x_0={}$
+$y_0={}$
+$v_{{x0}}={:.3f}$
+$v_{{y0}}={:.3f}$'''.format(x0, y0, vx0, vy0)
+    pl.annotate(info, xy=(0.01, 0.01), xycoords='axes fraction', fontsize=12)
+
 ##    pl.legend(loc='best')
 ##    ax.yaxis.set_major_locator(pl.MaxNLocator(nbins=4))
 ##    pl.savefig('pat_orbits_energies_momentums_atol={}_rtol={}.png'.format(
 ##        atol, rtol))
     pl.show()
 
-do_plots()
+# Animate orbit
+# Code courtesy of George Lesica
+results = double_star_analysis.scipy_results
+fig = pl.figure(figsize=(8, 8))
+ax = pl.axes(xlim=(-6, 6), ylim=(-6, 6))
+pl.title('Orbit Simulation', fontsize=16)
+pl.xlabel('X Position')
+pl.ylabel('Y Position')
+p1, = ax.plot([], [], marker='o')
+p2, = ax.plot([], [], marker='o')
+p3, = ax.plot([], [], marker='o')
+
+def animate(i):
+    p1.set_data([star1.x], [star1.y])
+    p2.set_data([star2.x], [star2.y])
+    p3.set_data([results.xs[i]], [results.ys[i]])
+    return p1, p2, p3
+
+anim = FuncAnimation(fig, animate, frames=1000, interval=1, blit=True)
+anim.save('pat_double_star_animation.mp4', fps=30)
+pl.show()
+
+##do_plots()
+
+
+## Animation (key steps from Jesse's code)
+##pl.ion()
+##plot_handle = pl.plot(results.xs, results.ys, 'o-', color='black', markersize=1, linewidth=0.1)[0]
+##for...
+##    plot_handle.set_data()
+##pl.ioff()
