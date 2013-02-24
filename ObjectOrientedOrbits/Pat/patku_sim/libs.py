@@ -40,8 +40,9 @@ class Body(Struct):
     '''
     counter = itertools.count(0)  # for assigning unique ids
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         self.id = Body.counter.next()
+        super(type(self), self).__init__(**kwargs)
 
     def with_state(self, state):
         ordered_attributes = ['x', 'y', 'vx', 'vy', 'm']
@@ -62,8 +63,9 @@ class BodyTests(unittest.TestCase):
 class System(Struct):
     '''This is a wrapper for a set of body objects. A list of bodies worked well for me. There is minimal other data, the total number of particles is needed. There should be a method for getting the state, and that method should return the data in a manner that is compatible with the vectors needed by the integration code. There should also be a way to set the state, given the vector output of the ode integrator. Finally, add functionality to add or remove a single particle.
     '''
-    def __init__(self, bodies):
+    def __init__(self, bodies, **kwargs):
         self.bodies = bodies
+        super(type(self), self).__init__(**kwargs)
 
     @property
     def masses(self):
@@ -87,15 +89,13 @@ def get_bodies_with_acceleration(bodies):
         for second in bodies:
             if first is second:
                 continue  # don't look at force of body on itself
-            #DEBUG
-            if hasattr(first, 'ax'):
-                raise Exception("{} shouldn't have an accel set already".format(first))
             m1, m2 = first.m, second.m
             x1, x2 = first.x, second.x
             y1, y2 = first.y, second.y
             r12x, r12y = x2 - x1, y2 - y1
             r12mag = np.sqrt(r12x**2 + r12y**2)
-            get_accel = lambda r_component: -G * m2 * r_component / r12mag**3
+            # NOTE: accel *experienced* by first body
+            get_accel = lambda r_component: G * m2 * r_component / r12mag**3
             a12x = get_accel(r12x)
             a12y = get_accel(r12y)
             axs.append(a12x)
@@ -106,6 +106,14 @@ def get_bodies_with_acceleration(bodies):
     return bodies  # mutated, so caller can instead just use her reference
 
 
+class MiscTests(unittest.TestCase):
+    def test_accelerations(self):
+        b1 = Body(x=0, y=0, m=1)
+        b2 = Body(x=1, y=0, m=2)
+        target = System([b1, b2])
+        get_bodies_with_acceleration(target.bodies)
+        self.assertGreater(b1.ax, 0)  # pulled right
+        self.assertAlmostEqual(b1.ax * b1.m, -b2.ax * b2.m)  # opposing forces
 
 class Integrator(object):
     '''Work is done here. The integration machinery should be established, functions bound, and the forward integration carried out by methods in this class.
@@ -159,7 +167,10 @@ def run():
         systems.append(next_system)
 
 
+system = FileReader.read_system_from(r'C:\Users\Pat\Documents\My Dropbox\Simulation Hecuba Group Share\ObjectOrientedOrbits\euler_problem.txt')
+get_bodies_with_acceleration(system.bodies)
+
+
 if __name__ == '__main__':
     print 'Running tests'
     unittest.main()
-
