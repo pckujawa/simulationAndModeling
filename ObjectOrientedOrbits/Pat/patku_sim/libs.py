@@ -11,6 +11,7 @@ import math
 import unittest
 import itertools
 from pprint import pprint, pformat
+from collections import defaultdict
 ##from matplotlib.animation import FuncAnimation  # v1.1+
 
 
@@ -39,14 +40,19 @@ class Body(Struct):
     '''stores, and retrieves the state data for one particle. In two dimensions, this consists of , postions, velocities, and mass respectively. Methods for getting and setting the state should be included. It will be helpful if the get_state function returns data in a way that lends itself to the conversion of state data to the sorts of vectors that are anticipated by the ode integration (see System, below).
     '''
     counter = itertools.count(0)  # for assigning unique ids
+    state_attributes = ['x', 'y', 'vx', 'vy']
+    extra_attributes = ['m']
+    all_attributes_in_order = state_attributes + extra_attributes
 
-    def __init__(self, **kwargs):
-        self.id = Body.counter.next()
+    def __init__(self, id_=None, **kwargs):
         super(type(self), self).__init__(**kwargs)
+        if id is not None:
+            self.id = id_
+        else:
+            self.id = Body.counter.next()
 
     def with_state(self, state):
-        ordered_attributes = ['x', 'y', 'vx', 'vy', 'm']
-        for name,val in zip(ordered_attributes, state):
+        for name,val in zip(Body.all_attributes_in_order, state):
             setattr(self, name, val)
         return self
 
@@ -55,7 +61,7 @@ class BodyTests(unittest.TestCase):
         e = Struct(x=1, y=2, vx=3, vy=4, m=5)  # expected
         state = np.array([e.x, e.y, e.vx, e.vy, e.m])
         target = Body().with_state(state)
-        for prop in ['x', 'y', 'vx', 'vy', 'm']:
+        for prop in Body.all_attributes_in_order:
             self.assertEqual(getattr(e, prop),
                 getattr(target, prop), prop)
 
@@ -64,26 +70,57 @@ class System(Struct):
     '''This is a wrapper for a set of body objects. A list of bodies worked well for me. There is minimal other data, the total number of particles is needed. There should be a method for getting the state, and that method should return the data in a manner that is compatible with the vectors needed by the integration code. There should also be a way to set the state, given the vector output of the ode integrator. Finally, add functionality to add or remove a single particle.
     '''
     def __init__(self, bodies, **kwargs):
-        self.bodies = bodies
+        '''Create a system with a copy of the arg bodies.'''
+        self.bodies = bodies[:]  # copy
+        self.bodies.sort(key = lambda b: b.id)  # maintain in sorted order
+        self.num_bodies = len(self.bodies)
         super(type(self), self).__init__(**kwargs)
+
+    @property
+    def state(self):
+        # Pull out state attributes from each body and concat
+        pass
 
     @property
     def masses(self):
         return [b.mass for b in self.bodies]
 
 
-
-class ForceManager(object):
-    '''This class should provide right hand side functions  of the sort used by the solvers in scipy; With the normal cautions about f(t,x) vs. f(x,t) (for ode). This would be a good candidate for inheritance, implementing a basic interface to the , a conversion to go from  to , and a way of handling parameters. Derived classes would then implement the specific , and name the parameters.
-    '''
-    pass
-
-G = 1  # not true, but fine for testing
-from collections import defaultdict
 # Initialize a holder for forces to later verify that, e.g. F[1][2] = -F[2][1]
 _forces_table = {'x': defaultdict(dict), 'y': defaultdict(dict)}
 
+class GravitationalForcer(object):
+    '''This class should provide right hand side functions  of the sort used by the solvers in scipy; With the normal cautions about f(t,x) vs. f(x,t) (for ode). This would be a good candidate for inheritance, implementing a basic interface to the , a conversion to go from  to , and a way of handling parameters. Derived classes would then implement the specific , and name the parameters.
+    '''
+    def __init__(self, system, time_is_first_arg=True):
+        self.system = system
+        self.time_is_first_arg = time_is_first_arg
+
+    def __call__(self, *args):
+        '''RHS of the step function; provides the derivatives in order.
+            :param args: either time followed by state (if self.time_is_first_arg is true) or state followed by time
+            :type args: tuple or list
+        '''
+        if self.time_is_first_arg:
+            return self._ode_fn(*args)  # unpack args in same order passed in
+        return self._ode_fn(args[1], args[0])  # switch order of args
+
+    def _ode_fn(self, t, state):
+        # NOTE: Throughout this process, order must be maintained
+        # Unpack state into bodies
+        # Find acceleration of bodies
+        # Return velocities and accels
+        print 't:', t, 'state:', state
+
+
+class GravitationalForcerTests(unittest.TestCase):
+    def test_given_state_return_derivatives_in_order(self):
+        target = GravitationalForcer(None)
+        target(None, )
+
 def get_bodies_with_acceleration(bodies):
+    G = 1  # not true, but fine for testing
+    # NOTE: Instead of nested for loop, we can use itertools.permutation()
     for first in bodies:
         axs, ays = [], []  # all accelerations for first body
         for second in bodies:
@@ -153,8 +190,7 @@ class FileReader(object):
 def run():
     # Driver idea
     system_init = FileReader.read_system_from('path/to/file.txt')
-    force = ForceManager(system.bodies.masses)
-    integr = Integrator(force)
+    integr = Integrator()
     t_start = 0
     t_end = 10
     dt = 0.1
@@ -162,7 +198,8 @@ def run():
     systems = [system_init]
     while times[-1] < t_end:
         next_time = times[-1] + dt
-        next_system = integr.next(systems[-1], next_time)  # could either return a system or have the Integrator mutate the internal system
+        force_fn = GravitationalForcer(system)
+        next_system = integr.next(force_fn, systems[-1], next_time)
         times.append(next_time)
         systems.append(next_system)
 
