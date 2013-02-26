@@ -11,8 +11,8 @@ import math
 import unittest
 import itertools
 from pprint import pprint, pformat
-from collections import defaultdict
-##from matplotlib.animation import FuncAnimation  # v1.1+
+from collections import defaultdict, namedtuple
+from matplotlib.animation import FuncAnimation  # v1.1+
 
 # http://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks-in-python
 def chunk_iter(l, n, strict=False):
@@ -31,6 +31,7 @@ for x, y, vx, vy in chunk_iter(states, 4):
         yield l[i:i+n]
 
 
+# Also check out collections.namedtuple
 class Struct(object):
     '''An expando object.'''
     def __init__(self, **kwargs):
@@ -154,8 +155,35 @@ class SystemStateAdapterTests(unittest.TestCase):
                 getattr(target, attr), attr + ' was different')
 
 
+class FileReader(object):
+    '''Provides factory methods for reading and converting files.'''
+    @classmethod
+    def read_system_from(cls, file_path):
+        '''Read a file and convert contents into a System.
+        File contents are of the form:
+            N = Number of bodies
+            x1 y1 vx1 vy1 m1
+            x2 y2 vx2 vy2 m2
+            ...
 
-    # Initialize a holder for forces to later verify that, e.g. F[1][2] = -F[2][1]
+        Arguments:
+        :param file_path: path to the file to read
+        :type file_path: string
+        :returns: System represented by file contents
+        :rtype: System
+        '''
+        f = file(file_path)
+        f.next()  # line with number of bodies - ignore
+        lines = np.genfromtxt(f, delimiter=' ')
+        # Pull out the state values (x,y,vx,vy) and combine them
+        state = lines[:,0:4].flatten()
+        masses = lines[:,4]
+        s = SystemStateAdapter.system_from_state(state)
+        s.masses = masses
+        return s
+
+
+# Initialize a holder for forces to later verify that, e.g. F[1][2] = -F[2][1]
 _forces_table = {'x': defaultdict(dict), 'y': defaultdict(dict)}
 
 
@@ -189,9 +217,14 @@ class GravitationalForcerTests(unittest.TestCase):
         target = GravitationalForcer(None)
         target(None, TODO)
 
-def get_bodies_with_acceleration(bodies):
+def get_accelerations_on_bodies(bodies):
+    """Return a collection of the accelerations experienced by each body.
+    NOTE: mutates the bodies by adding acceleration attributes
+    :returns: {'x': [ordered x accels], 'y': [ same for y ]}
+    """
     G = 1  # not true, but fine for testing
     # NOTE: Instead of nested for loop, we can use itertools.permutation()
+    accelerations = {'x': [], 'y': []}
     for first in bodies:
         axs, ays = [], []  # all accelerations for first body
         for second in bodies:
@@ -211,7 +244,9 @@ def get_bodies_with_acceleration(bodies):
             _forces_table['x'][first.id][second.id] = a12x * m1
             _forces_table['y'][first.id][second.id] = a12y * m1
         first.ax, first.ay = sum(axs), sum(ays)
-    return bodies  # mutated, so caller can instead just use her reference
+        accelerations['x'].append(first.ax)
+        accelerations['y'].append(first.ay)
+    return accelerations
 
 
 class MiscTests(unittest.TestCase):
@@ -219,70 +254,110 @@ class MiscTests(unittest.TestCase):
         b1 = Body(x=0, y=0, mass=1)
         b2 = Body(x=1, y=0, mass=2)
         target = System([b1, b2])
-        get_bodies_with_acceleration(target.bodies)
+        get_accelerations_on_bodies(target.bodies)
         self.assertGreater(b1.ax, 0)  # pulled right
         self.assertAlmostEqual(b1.ax * b1.mass, -b2.ax * b2.mass)  # opposing forces
 
 class Integrator(object):
     '''Work is done here. The integration machinery should be established, functions bound, and the forward integration carried out by methods in this class.
     '''
-    pass
+    def __init__(self, masses):
+        self.masses = masses
+
+    def ode_fn(self, state, time):
+        """Provide derivatives to odeint call"""
+        s = SystemStateAdapter.system_from_state(state)
+        s.masses = self.masses
+        accels = get_accelerations_on_bodies(list(s))
+##        axs, ays = accels['x'], accels['y']
+        # NOTE: We rely on the function above adding the .ax and .ay attributes to each body rather than iterating through the returned accelerations.
+        new_state = []
+        for i, body in enumerate(s):
+            new_state.extend((body.vx, body.vy, body.ax, body.ay))
+        return np.array(new_state)  # is it necessary to array-ize?
+
+
+    def step(self, system, time, prev_time=0):
+        """Move a copy of the system forward in time.
+        :return: a new system at the specified time
+        :rtype: System
+        """
+        init_state = SystemStateAdapter.state_from_system(system)
+        # NOTE: Need to specify previous time to get movement
+        ode_results = odeint(self.ode_fn, init_state, [prev_time, time])
+        self.prev_time = time
+        last_state = ode_results[-1]
+        return SystemStateAdapter.system_from_state(last_state)
+
 
 class IntegratorTests(unittest.TestCase):
-    def test_next_returns_next_time_step(self):
-        states = odeint(double_star, double_star_state_0, times)
-        TODO
+    def test_given_two_bodies_step_shows_movement_towards_each_other(self):
+        # NOTE: Make positions and time so that bodies never get too close and we have to deal with singularities (odeint takes forever)
+        x1_init, x2_init = 0, 10
+        time = 1
+        init_state = [x1_init, 0, 0, 0, x2_init, 0, 0, 0]
+        init_system = SystemStateAdapter.system_from_state(init_state)
+        masses = [1, 1]
+        integr = Integrator(masses)
+        system = integr.step(init_system, time)
+        body1, body2 = iter(system)
+        self.assertGreater(body1.x, x1_init)
+        self.assertLess(body2.x, x2_init)
 
 
-class FileReader(object):
-    '''Provides factory methods for reading and converting files.'''
-    @classmethod
-    def read_system_from(cls, file_path):
-        '''Read a file and convert contents into a System.
-        File contents are of the form:
-            N = Number of bodies
-            x1 y1 vx1 vy1 m1
-            x2 y2 vx2 vy2 m2
-            ...
 
-        Arguments:
-        :param file_path: path to the file to read
-        :type file_path: string
-        :returns: System represented by file contents
-        :rtype: System
-        '''
-        f = file(file_path)
-        f.next()  # line with number of bodies - ignore
-        lines = np.genfromtxt(f, delimiter=' ')
-        # Pull out the state values (x,y,vx,vy) and combine them
-        state = lines[:,0:4].flatten()
-        masses = lines[:,4]
-        s = SystemStateAdapter.system_from_state(state)
-        s.masses = masses
-        return s
-
-
-def run():
+def run(file_path):
+    global times, systems, integr
     # Driver idea
-    system_init = FileReader.read_system_from('path/to/file.txt')
-    integr = Integrator()
+    system_init = FileReader.read_system_from(file_path)
+    integr = Integrator(system_init.masses)
     t_start = 0
     t_end = 10
     dt = 0.1
     times = [t_start]
     systems = [system_init]
     while times[-1] < t_end:
-        next_time = times[-1] + dt
-        force_fn = GravitationalForcer(system)
-        next_system = integr.next(force_fn, systems[-1], next_time)
+        prev_time = times[-1]
+        next_time = prev_time + dt
+        next_system = integr.step(systems[-1], next_time, prev_time)
         times.append(next_time)
         systems.append(next_system)
 
+import timeit
+names_and_files = [
+    ('Euler', r'C:\Users\Pat\Documents\My Dropbox\Simulation Hecuba Group Share\ObjectOrientedOrbits\euler_problem.txt'),
+    ('Lagrange', r'C:\Users\Pat\Documents\My Dropbox\Simulation Hecuba Group Share\ObjectOrientedOrbits\lagrange_problem.txt'),
+    ('Montgomery', r'C:\Users\Pat\Documents\My Dropbox\Simulation Hecuba Group Share\ObjectOrientedOrbits\montgomery_problem.txt')
+]
 
-system = FileReader.read_system_from(r'C:\Users\Pat\Documents\My Dropbox\Simulation Hecuba Group Share\ObjectOrientedOrbits\euler_problem.txt')
-get_bodies_with_acceleration(system.bodies)
+for name, file_path in names_and_files:
+    print 'Running simulation on', name, 'data'
+    timer = timeit.Timer(lambda: run(file_path))
+    time_taken = timer.timeit(1)
+    print 'Time', time_taken, 'seconds'
 
+    # Animate orbit
+    # Code courtesy of George Lesica
+    fig = pl.figure(figsize=(8, 8))
+    ax = pl.axes(xlim=(-6, 6), ylim=(-6, 6))  # necessary because initial plot is too zoomed in
+    pl.title('{} Orbit Simulation'.format(name), fontsize=16)
+    pl.xlabel('X Position')
+    pl.ylabel('Y Position')
+    p1, = ax.plot([], [], marker='o')
+    p2, = ax.plot([], [], marker='o')
+    p3, = ax.plot([], [], marker='o')
 
-if __name__ == '__main__':
-    print 'Running tests'
-    unittest.main()
+    def animate(i):
+        b1, b2, b3 = iter(systems[i])
+        p1.set_data([b1.x], [b1.y])
+        p2.set_data([b2.x], [b2.y])
+        p3.set_data([b3.x], [b3.y])
+        return p1, p2, p3
+
+    anim = FuncAnimation(fig, animate, frames=len(times), interval=1, blit=True)
+    anim.save('pat_{}_orbit_animation.avi'.format(name), fps=30)
+    pl.show()
+
+##if __name__ == '__main__':
+##    print 'Running tests'
+##    unittest.main()
