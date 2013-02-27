@@ -186,37 +186,6 @@ class FileReader(object):
 # Initialize a holder for forces to later verify that, e.g. F[1][2] = -F[2][1]
 _forces_table = {'x': defaultdict(dict), 'y': defaultdict(dict)}
 
-
-class GravitationalForcer(object):
-    """This class should provide right hand side functions  of the sort used by the solvers in scipy; With the normal cautions about f(t,x) vs. f(x,t) (for ode). This would be a good candidate for inheritance, implementing a basic interface to the , a conversion to go from  to , and a way of handling parameters. Derived classes would then implement the specific , and name the parameters.
-    """
-    def __init__(self, system, time_is_first_arg=True):
-        self.system = system
-        self.time_is_first_arg = time_is_first_arg
-
-    def __call__(self, *args):
-        '''RHS of the step function; provides the derivatives in order.
-            :param args: either time followed by state (if self.time_is_first_arg is true) or state followed by time
-            :type args: tuple or list
-        '''
-        if self.time_is_first_arg:
-            return self._ode_fn(*args)  # unpack args in same order passed in
-        return self._ode_fn(args[1], args[0])  # switch order of args
-
-    def _ode_fn(self, t, state):
-        # NOTE: Throughout this process, order must be maintained
-        # Unpack state into bodies/system
-        SystemBuilder().with_state(state).with_masses(masses).get()
-        # Find acceleration of bodies
-        # Return velocities and accels
-        print 't:', t, 'state:', state
-
-
-class GravitationalForcerTests(unittest.TestCase):
-    def test_given_state_return_derivatives_in_order(self):
-        target = GravitationalForcer(None)
-        target(None, TODO)
-
 def get_accelerations_on_bodies(bodies):
     """Return a collection of the accelerations experienced by each body.
     NOTE: mutates the bodies by adding acceleration attributes
