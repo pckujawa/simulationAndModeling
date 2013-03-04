@@ -1,0 +1,3 @@
+To be able to use libraries in this folder (e.g. `import patku_sim`), you need to make sure that the path (e.g. C:\Users\Pat\Documents\My Dropbox\Simulation Hecuba Group Share\lib) is in your PYTHONPATH environment variable (which may or may not already exist). If the variable is already set, you can append this lib path to it by separating with a semicolon.
+
+If none of this makes sense, ask Pat :-).
