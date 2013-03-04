@@ -48,10 +48,10 @@ class Container(object):
 
 
     def get_distance_matrices(self, *points):
-        """Calculates the distances between all points for each dimension.
+        """Calculates the distances between all points for each dimension and radially.
 
         :type points: lists or arrays
-        :returns: each dimension's distance matrix, in same order as passed in
+        :returns: each dimension's distance matrix, in same order as passed in, followed by radial distance matrix
         """
         cPoints = len(points)
         if cPoints < 2:
@@ -72,7 +72,13 @@ class Container(object):
                     xdist[xdist < -xbound / 2.0] += xbound
                 xdist = xdist - xdist.T
                 yield xdist
-        return tuple(_iter())
+        linear_distances = list(_iter())
+        radial_distance = np.zeros_like(linear_distances[0])
+        for x in linear_distances:
+            radial_distance += x**2
+        radial_distance = np.sqrt(radial_distance)
+        linear_distances.append(radial_distance)  # too lazy to name a temp variable
+        return linear_distances
 
 
 class ContainerTests(unittest.TestCase):
@@ -85,8 +91,9 @@ class ContainerTests(unittest.TestCase):
             [-1, 0]])
         e_y = np.copy(e_x)
         e_z = np.copy(e_x)
+        e_r = np.copy(e_x)*math.sqrt(3)  # sqrt of squares for radial dist
         f = Container(bounds=None)
-        a_x, a_y, a_z = f.get_distance_matrices(b_origin, b_111)
+        a_x, a_y, a_z, a_r = f.get_distance_matrices(b_origin, b_111)
         for e,a, in ((e_x, a_x), (e_y, a_y), (e_z, a_z)):
             self.assertTrue(np.all(np.equal(e, a)))
 
@@ -103,7 +110,7 @@ class ContainerTests(unittest.TestCase):
             [-1, 0, 1],
             [-2, -1, 0]])
         f = Container(bounds=None)
-        ax, ay = f.get_distance_matrices(p1, p2, p3)
+        ax, ay, ar = f.get_distance_matrices(p1, p2, p3)
         for e,a, in ((ex, ax), (ey, ay)):
             self.assertTrue(np.all(np.equal(e, a)))
 
@@ -113,7 +120,7 @@ class ContainerTests(unittest.TestCase):
             [-1, 0]])
         ey = np.copy(ex)
         f = Container(bounds=(2, 2))
-        ax, ay = f.get_distance_matrices([0,0], [3,1])
+        ax, ay, a_r = f.get_distance_matrices([0,0], [3,1])
         for e,a, in ((ex, ax), (ey, ay)):
             self.assertTrue(np.all(np.equal(e, a)))
 
@@ -122,7 +129,7 @@ class ContainerTests(unittest.TestCase):
         expected = np.array([
             [0, -0.2],
             [0.2, 0]])
-        actual, = f.get_distance_matrices([0.1], [0.9])
+        actual, a_r = f.get_distance_matrices([0.1], [0.9])
         for e,a in zip(expected.flat, actual.flat):
             self.assertAlmostEqual(e, a)
 
