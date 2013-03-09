@@ -21,6 +21,52 @@ import unittest
 class Container(object):
     def __init__(self, bounds=None):
         self.bounds = bounds
+        self._positions = []
+        self._velocities = []
+        self._accelerations = []
+        self.kinetic_energies = []
+        self.potential_energies = []
+
+    def add_particle(self, position, velocity=None, acceleration=None):
+        """Add one particle of n dimensions, *unbounded*.
+        """
+        self._positions.append(np.array(position))
+        v = velocity or np.zeros_like(position)
+        a = acceleration or np.zeros_like(position)
+        self._velocities.append(np.array(v))
+        self._accelerations.append(np.array(a))
+
+    @property
+    def positions(self):
+        return np.array(self._positions)
+
+    @positions.setter
+    def positions(self, value):
+        """Bound points
+        :type value: ndarray
+        """
+        self._positions = self.bound(value)
+
+
+    @property
+    def velocities(self):
+        return np.array(self._velocities)
+
+    @velocities.setter
+    def velocities(self, value):
+        """
+        :type value: ndarray
+        """
+        self._velocities = value
+
+    @property  # no setter: imply that these are set internally
+    def accelerations(self):
+        return np.array(self._accelerations)
+
+    def apply_force(self):
+        #TODO replace stub with Lennard-Jones force
+        for a in self._accelerations:
+            a[0] += 1  # increase only first dimension
 
     def bound(self, points):
         """Wrap points in space within this torus, ensuring that no dimension is out of bounds.
@@ -79,6 +125,35 @@ class Container(object):
         radial_distance = np.sqrt(radial_distance)
         linear_distances.append(radial_distance)  # too lazy to name a temp variable
         return linear_distances
+
+
+class VerletIntegrator(object):
+    def step(self, container, dt):
+        """Move the container's particles forward in time and encapsulate in a new container.
+        """
+        c = container
+        c_accelerations = c.accelerations
+        c_next = Container(bounds=c.bounds)
+        def _posn_iter():
+            for xs, vxs, axs in zip(c.positions, c.velocities, c_accelerations):
+                yield xs + vxs*dt + 0.5*axs*dt**2
+        new_posns = list(_posn_iter())
+        c_next.positions = np.array(new_posns)  # TODO bounding done in setter
+        c_next.apply_force()  # TODO changes accelerations, calculates PE
+        kes = None  # Kinetic Energy
+        lVxs = []  # l=list; store vxs values
+        for xs, vxs, axs, axs_prev in zip(
+                c_next.positions, c_next.velocities, c_next.accelerations, \
+                c_accelerations):
+            new_vxs = vxs + 0.5*(axs + axs_prev)*dt
+            lVxs.append(new_vxs)
+            if kes is None:
+                kes = np.zeros_like(new_vxs)
+            kes += 0.5 * new_vxs**2  # mass is 1
+        c_next.velocities = np.array(lVxs)
+        c_next.kinetic_energies = kes
+        return c_next
+
 
 
 class ContainerTests(unittest.TestCase):
