@@ -14,36 +14,12 @@ import math
 ##from collections import defaultdict, namedtuple
 from matplotlib.animation import FuncAnimation  # v1.1+
 
-
 from patku_sim import Container, VerletIntegrator
 
 particle_radius = 2**(1.0/6)
-init_container = Container(bounds=(5,5))
-
-##One particle, number 5, has a tiny velocity in the upwards direction and goes a tiny bit slower in x.
-initialization = 'line'
-if initialization == 'line':
-    gamma = 0.0
-    Lx = 10.
-    Ly = 10.
-    init_container.bounds = (Lx, Ly)
-    for i in range(1, 7):
-        position = [Lx / 2.0, (i-0.5)/7 * Ly]
-        if i == 5:
-            init_container.add_particle(position, [1-gamma, gamma])
-        else:
-            init_container.add_particle(position, [1, 0])
-
-num_frames = 5000
-dt = 1e-2
-containers = [init_container]
-integrator = VerletIntegrator()
-for i in range(num_frames - 1):
-    next_container = integrator.step(containers[-1], dt)
-    containers.append(next_container)
 
 # Animation and circle code courtesy of Kevin Joyce
-def circle(x, y, radius = 0.5*2**(1.0/6), color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
+def circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
     """ add a circle to ax or current axes
     """
     e = pl.Circle([x, y], radius)
@@ -57,17 +33,38 @@ def circle(x, y, radius = 0.5*2**(1.0/6), color="lightsteelblue", facecolor="gre
     e.set_alpha( alpha )
     return e
 
-def move(self, dx, dy):
-    """Needs to be added to pl.Circle
-    :returns: copy of circle with center moved
-    """
-    center = list(self.center)
-    center[0] += dx
-    center[1] += dy
-    return pl.Circle(center, self.radius)
-pl.Circle.move = move  # monkey patch
+init_container = Container()
+
+##One particle, number 5, has a tiny velocity in the upwards direction and goes a tiny bit slower in x.
+sim_name = 'line'
+ix_particle_to_highlight = None
+if sim_name == 'line':
+    ix_particle_to_highlight = 5
+    gamma = 1e-6
+    Lx = 10
+    Ly = 10
+    init_container.bounds = (Lx, Ly)
+    for i in xrange(1, Ly+1):
+        position = [Lx / 2.0, (i-0.5)]
+        if i == ix_particle_to_highlight:
+            init_container.add_particle(position, [1-gamma, gamma])
+        else:
+            init_container.add_particle(position, [1, 0])
 
 
+num_frames = 1000
+dt = 1e-2
+containers = [init_container]
+integrator = VerletIntegrator()
+for i in range(num_frames - 1):
+    next_container = integrator.step(containers[-1], dt)
+    containers.append(next_container)
+end_container = containers[-1]
+
+# Now run... backwards!
+for i in range(num_frames - 1):
+    next_container = integrator.step(containers[-1], -dt)
+    containers.append(next_container)
 
 # Animate orbit
 # Code courtesy of George Lesica
@@ -85,19 +82,23 @@ pl.ylabel('Y Position')
 ## Pre initializing is necessary I guess
 posns = init_container.positions
 circles = []
-for posn in posns:
-    e = circle(posn[0], posn[1])
+for i,posn in enumerate(posns):
+    facecolor = 'green'
+    if i == ix_particle_to_highlight:
+        facecolor = 'blue'
+    e = circle(posn[0], posn[1], facecolor = facecolor)
     circles.append(ax.add_patch(e))
 
 def next_frame(i):
-    global particle_plots
-    posns = containers[i].positions
+##    global particle_plots
 ##    for i,plot in zip(xrange(init_container.num_particles), particle_plots):
 ##        plot.set_data(posns[i][0], posns[i][1])  # x and y
+    posns = containers[i].positions
     for i,circle in zip(xrange(init_container.num_particles), circles):
         circle.center = (posns[i][0], posns[i][1])  # x and y
     return circles
 
-anim = FuncAnimation(fig, next_frame, frames=num_frames, interval=1, blit=True)
-anim.save('pat_mol_dyn_animation.avi', fps=30)
+# Twice the frames because we run backwards
+anim = FuncAnimation(fig, next_frame, frames=num_frames*2 - 1, interval=dt, blit=True)
+##anim.save('pat_mol_dyn_{}_animation.avi'.format(sim_name), fps=30)
 pl.show()
