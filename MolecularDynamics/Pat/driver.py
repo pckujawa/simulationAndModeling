@@ -17,24 +17,25 @@ from matplotlib.animation import FuncAnimation  # v1.1+
 
 from patku_sim import Container, VerletIntegrator
 
+particle_radius = 2**(1.0/6)
 init_container = Container(bounds=(5,5))
 
 ##One particle, number 5, has a tiny velocity in the upwards direction and goes a tiny bit slower in x.
 initialization = 'line'
 if initialization == 'line':
-    gamma = 1e-6
+    gamma = 0.0
     Lx = 10.
     Ly = 10.
     init_container.bounds = (Lx, Ly)
-    for i in range(1, 12):
-        position = [Lx / 2.0, (i-0.5)/11.0 * Ly]
-        if i ==5:
+    for i in range(1, 7):
+        position = [Lx / 2.0, (i-0.5)/7 * Ly]
+        if i == 5:
             init_container.add_particle(position, [1-gamma, gamma])
         else:
             init_container.add_particle(position, [1, 0])
 
-num_frames = 500
-dt = 0.1
+num_frames = 5000
+dt = 1e-2
 containers = [init_container]
 integrator = VerletIntegrator()
 for i in range(num_frames - 1):
@@ -42,7 +43,7 @@ for i in range(num_frames - 1):
     containers.append(next_container)
 
 # Animation and circle code courtesy of Kevin Joyce
-def circle(x, y, radius = 2**(1.0/6), color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
+def circle(x, y, radius = 0.5*2**(1.0/6), color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
     """ add a circle to ax or current axes
     """
     e = pl.Circle([x, y], radius)
@@ -85,8 +86,8 @@ pl.ylabel('Y Position')
 posns = init_container.positions
 circles = []
 for posn in posns:
-  e = circle(posn[0], posn[1])
-  circles.append(ax.add_patch(e))
+    e = circle(posn[0], posn[1])
+    circles.append(ax.add_patch(e))
 
 def next_frame(i):
     global particle_plots
@@ -98,5 +99,5 @@ def next_frame(i):
     return circles
 
 anim = FuncAnimation(fig, next_frame, frames=num_frames, interval=1, blit=True)
-##anim.save('pat_mol_dyn_animation.avi', fps=30)
+anim.save('pat_mol_dyn_animation.avi', fps=30)
 pl.show()

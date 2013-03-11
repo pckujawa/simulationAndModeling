@@ -15,8 +15,42 @@ import unittest
 
 ##from libs import Struct
 
-##Point2D = namedtuple('Point2D', 'x y')
-##Point3D = namedtuple('Point3D', 'x y z')
+
+def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
+    """
+    :param radius: same as $\sigma$
+    :param epsilon: Constant of proportionality
+    :returns: accelerations and potential energy
+    """
+    # Find position differences
+    dr = distance_matrices[-1]
+
+    # Eliminate zeros on diagonal
+    dr[np.diag_indices_from(dr)] = 1
+
+    # Build term to make it easy to get potential energy AND force:
+    if np.any(dr == 0):
+        raise RuntimeError("The distance between some particles is zero. That's bad.")
+    over6 = (radius / dr)**6  # WARNING div by zero on diagonals yields inf
+    over12 = over6**2
+
+    # Force magnitude, from equation 8.3 of Gould
+    magnitude = 24.0 * epsilon/dr * (2.0*over12 - over6)
+
+    # Project onto components, sum all forces on each particle The dx,dy,dz
+    # are zero on diagonal and save from dr = -1 on diagonal contributing to
+    # force
+    accelerations = []
+    for dx in distance_matrices[:-1]:
+        ax = np.sum(-magnitude * dx/dr, axis=1)
+        accelerations.append(ax)
+    accelerations = np.array(accelerations)
+
+    # Easiest to compute energy at this point from Equation 8.2 of Gould
+    # Note the triu to avoid double counting entries and the k=1 to avoid
+    # self-potential due to dr being -1 to avoid divergence
+    pe = 4.0 * epsilon * np.sum(np.sum(np.triu(over12 - over6, k=1)))
+    return accelerations.transpose(), pe
 
 class Container(object):
     def __init__(self, bounds=None):
@@ -77,10 +111,12 @@ class Container(object):
         self._accelerations = accelerations.tolist()
 
     def apply_force(self):
-        #TODO replace stub with Lennard-Jones force
-        #TODO also calc and store PE
-        for a in self._accelerations:
-            a[0] += 0.1  # increase only first dimension
+##        for a in self._accelerations:
+##            a[0] += 0.1  # increase only first dimension
+        distance_matrices = self.get_distance_matrices(*self._positions)
+        accelerations, pe = lennardJonesForce(distance_matrices)
+        self._accelerations = accelerations
+        self.potential_energies.append(pe)
 
     def bound(self, points):
         """Wrap points in space within this torus, ensuring that no dimension is out of bounds.
@@ -88,7 +124,7 @@ class Container(object):
         :returns: points within bounds
         :rtype: numpy array
         """
-        if not self.bounds:
+        if self.bounds is None:
             return points
 
         bounded = np.copy(points)
@@ -101,8 +137,11 @@ class Container(object):
         for i in xrange(cDims):
             xs = bounded[:,i]
             boundary = self.bounds[i]
-            xs[xs > boundary] -= boundary
-            xs[xs < 0] += boundary
+            # TODO place in while loop to ensure positions haven't gone multiple times past the boundary
+            xs = xs % boundary
+##            xs[xs > boundary] -= boundary
+##            xs[xs < 0] += boundary
+            bounded[:,i] = xs  # is this necessary? seems so
         if cPoints == 1:
             bounded = bounded[0]  # pull back out the 1-dim array
         return bounded
@@ -127,11 +166,16 @@ class Container(object):
             for i in xrange(cDim):
                 xs = aPoints[:,i]
                 xdist = np.tile(xs, (cPoints, 1))
-                if self.bounds:
-                    xbound = self.bounds[i]
-                    xdist[xdist > xbound / 2.0] -= xbound
-                    xdist[xdist < -xbound / 2.0] += xbound
                 xdist = xdist - xdist.T
+                if self.bounds is not None:
+                    try:
+                        xbound = self.bounds[i]
+                    except IndexError:
+                        raise Exception("There aren't enough boundaries for the number of dimensions in the points. Ensure that your bounds are of the same dimension as your points.")
+                    xdist[xdist > xbound / 2.0] -= xbound
+                    assert not np.any(xdist > xbound/2.0)
+                    xdist[xdist < -xbound / 2.0] += xbound
+                    assert not np.any(xdist < -xbound/2.0)
                 yield xdist
         linear_distances = list(_iter())
         radial_distance = np.zeros_like(linear_distances[0])
