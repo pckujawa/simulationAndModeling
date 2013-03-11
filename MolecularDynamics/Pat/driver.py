@@ -14,110 +14,89 @@ import math
 ##from collections import defaultdict, namedtuple
 from matplotlib.animation import FuncAnimation  # v1.1+
 
-from patku_sim import Container
 
-container = Container(bounds=(5,5))
-c = container
+from patku_sim import Container, VerletIntegrator
+
+init_container = Container(bounds=(5,5))
+
 ##One particle, number 5, has a tiny velocity in the upwards direction and goes a tiny bit slower in x.
 initialization = 'line'
 if initialization == 'line':
     gamma = 1e-6
     Lx = 10.
     Ly = 10.
-    c.bounds = (Lx, Ly)
+    init_container.bounds = (Lx, Ly)
     for i in range(1, 12):
         position = [Lx / 2.0, (i-0.5)/11.0 * Ly]
         if i ==5:
-            c.add_particle(position, [1-gamma, gamma])
+            init_container.add_particle(position, [1-gamma, gamma])
         else:
-            c.add_particle(position, [1, 0])
-##container.accelerations = np.zeros((4,3))
-##container.velocities = np.zeros((4,3))
-##container.positions = np.array([
-##    [],
-##])
-##container.add(list of particles, 2D or 3D)
+            init_container.add_particle(position, [1, 0])
 
-# Animation code courtesy Kevin Joyce
-########### FORCED ANIMATION ##########
-########## PARAMS ###############
-num_frames = 50
-delay = 1
-save_animation = True
-file_name = "line"
-#################################
+num_frames = 500
+dt = 0.1
+containers = [init_container]
+integrator = VerletIntegrator()
+for i in range(num_frames - 1):
+    next_container = integrator.step(containers[-1], dt)
+    containers.append(next_container)
 
-circles = []
-fig = pl.figure()
-ax = pl.gca()
+# Animation and circle code courtesy of Kevin Joyce
+def circle(x, y, radius = 2**(1.0/6), color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
+    """ add a circle to ax or current axes
+    """
+    e = pl.Circle([x, y], radius)
+    if ax is None:
+        ax = pl.gca()
+    ax.add_artist(e)
+    e.set_clip_box(ax.bbox)
+    e.set_edgecolor( color )
+    e.set_linewidth(3)
+    e.set_facecolor( facecolor )  # "none" not None
+    e.set_alpha( alpha )
+    return e
+
+def move(self, dx, dy):
+    """Needs to be added to pl.Circle
+    :returns: copy of circle with center moved
+    """
+    center = list(self.center)
+    center[0] += dx
+    center[1] += dy
+    return pl.Circle(center, self.radius)
+pl.Circle.move = move  # monkey patch
+
+
+
+# Animate orbit
+# Code courtesy of George Lesica
+fig = pl.figure(figsize=(4, 4))
+xlim, ylim = init_container.bounds
+ax = pl.axes(xlim=(0, xlim), ylim=(0, ylim))  # necessary because initial plot is too zoomed in
 ax.set_aspect('equal')
-ax.set_xlim((0, c.bounds[0]))
-ax.set_ylim((0, c.bounds[1]))
+ax.set_xlim((0, init_container.bounds[0]))
+ax.set_ylim((0, init_container.bounds[1]))
+pl.title('Molec Dyn Simulation', fontsize=16)
+pl.xlabel('X Position')
+pl.ylabel('Y Position')
 
-def prettify_circle(e):
-  color="lightsteelblue"
-  facecolor="green"
-  alpha=.6
-  e.set_clip_box(ax.bbox)
-  e.set_edgecolor( color )
-  e.set_linewidth(3)
-  e.set_facecolor( facecolor )  # "none" not None
-  e.set_alpha( alpha )
-  return e
-
+##particle_plots = [ax.plot([], [], marker='o')[0] for i in range(init_container.num_particles)]
 ## Pre initializing is necessary I guess
-posns = c.positions
-radius = 2**.2
-for x in posns:
-  e = Circle( (x[1], x[0]), radius=radius )
-  e = prettify_circle(e)
+posns = init_container.positions
+circles = []
+for posn in posns:
+  e = circle(posn[0], posn[1])
   circles.append(ax.add_patch(e))
 
-def init():
-  return circles
-
 def next_frame(i):
-#  print "Frame: {}".format(i)
-  for i in range(len(circles)):
-    x = posns[i][0]
-    y = posns[i][1]
-    e = Circle((x, y), radius=radius)
-    e.update_from(circles[i])
-    circles[i] = ax.add_patch(e)
-  return circles
+    global particle_plots
+    posns = containers[i].positions
+##    for i,plot in zip(xrange(init_container.num_particles), particle_plots):
+##        plot.set_data(posns[i][0], posns[i][1])  # x and y
+    for i,circle in zip(xrange(init_container.num_particles), circles):
+        circle.center = (posns[i][0], posns[i][1])  # x and y
+    return circles
 
-anim = FuncAnimation(fig, next_frame, init_func=init, frames=num_frames, interval=delay, blit=True)
-
-if save_animation:
-  anim.save(file_name+".mp4",fps=25)
-else:
-  pl.show()
-
-
-##import timeit
-##
-##timer = timeit.Timer(run)
-##time_taken = timer.timeit(1)
-##print 'Time', time_taken, 'seconds'
-##
-### Animate orbit
-### Code courtesy of George Lesica
-##fig = pl.figure(figsize=(8, 8))
-##ax = pl.axes(xlim=(-2, 2), ylim=(-2, 2))  # necessary because initial plot is too zoomed in
-##pl.title('{} Orbit Simulation'.format(name), fontsize=16)
-##pl.xlabel('X Position')
-##pl.ylabel('Y Position')
-##p1, = ax.plot([], [], marker='o')
-##p2, = ax.plot([], [], marker='o')
-##p3, = ax.plot([], [], marker='o')
-##
-##def animate(i):
-##    b1, b2, b3 = iter(systems[i])
-##    p1.set_data([b1.x], [b1.y])
-##    p2.set_data([b2.x], [b2.y])
-##    p3.set_data([b3.x], [b3.y])
-##    return p1, p2, p3
-##
-##anim = FuncAnimation(fig, animate, frames=len(times), interval=1, blit=True)
-##anim.save('pat_{}_orbit_animation.avi'.format(name), fps=30)
-####    pl.show()
+anim = FuncAnimation(fig, next_frame, frames=num_frames, interval=1, blit=True)
+##anim.save('pat_mol_dyn_animation.avi', fps=30)
+pl.show()

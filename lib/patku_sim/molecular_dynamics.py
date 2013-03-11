@@ -26,6 +26,7 @@ class Container(object):
         self._accelerations = []
         self.kinetic_energies = []
         self.potential_energies = []
+        self.num_particles = 0
 
     def add_particle(self, position, velocity=None, acceleration=None):
         """Add one particle of n dimensions, *unbounded*.
@@ -35,38 +36,51 @@ class Container(object):
         a = acceleration or np.zeros_like(position)
         self._velocities.append(np.array(v))
         self._accelerations.append(np.array(a))
+        self.num_particles += 1
 
     @property
     def positions(self):
         return np.array(self._positions)
 
-    @positions.setter
-    def positions(self, value):
-        """Bound points
-        :type value: ndarray
-        """
-        self._positions = self.bound(value)
-
-
     @property
     def velocities(self):
         return np.array(self._velocities)
 
-    @velocities.setter
-    def velocities(self, value):
-        """
-        :type value: ndarray
-        """
-        self._velocities = value
-
-    @property  # no setter: imply that these are set internally
+    @property
     def accelerations(self):
         return np.array(self._accelerations)
 
+    def set_velocities(self, velocities):
+        """
+        :type velocities: ndarray or list
+        """
+        if type(velocities) is list:
+            self._velocities = velocities
+        else:
+            self._velocities = velocities.tolist()
+
+    def set_positions_velocities_accelerations(self, positions, velocities=None, accelerations=None):
+        """Bound points
+        :type positions: ndarray
+        :type velocities: optional ndarray
+        :type accelerations: optional ndarray
+        """
+        shape = positions.shape  # stores num dimensions and num particles
+        self.num_particles = shape[0]
+        assert self.num_particles == len(positions)
+        self._positions = self.bound(positions).tolist()
+        if velocities is None:
+            velocities = np.zeros_like(positions)
+        self.set_velocities(velocities)
+        if accelerations is None:
+            accelerations = np.zeros_like(positions)
+        self._accelerations = accelerations.tolist()
+
     def apply_force(self):
         #TODO replace stub with Lennard-Jones force
+        #TODO also calc and store PE
         for a in self._accelerations:
-            a[0] += 1  # increase only first dimension
+            a[0] += 0.1  # increase only first dimension
 
     def bound(self, points):
         """Wrap points in space within this torus, ensuring that no dimension is out of bounds.
@@ -79,10 +93,11 @@ class Container(object):
 
         bounded = np.copy(points)
         # Because numpy doesn't handle multi-dimensional arrays the same as 1-dimensional ones, it's easiest to just make it always look like a multi-dim array
-        cPoints, = points.shape  # can't unpack second item in 1-dim array
+        points_shape = points.shape
+        cPoints = points_shape[0]
         if cPoints == 1:
             bounded = np.array([bounded, np.zeros_like(bounded)])
-        ignore, cDims = bounded.shape
+        _ignore, cDims = bounded.shape
         for i in xrange(cDims):
             xs = bounded[:,i]
             boundary = self.bounds[i]
@@ -132,14 +147,19 @@ class VerletIntegrator(object):
         """Move the container's particles forward in time and encapsulate in a new container.
         """
         c = container
+        c_velocities = c.velocities
         c_accelerations = c.accelerations
         c_next = Container(bounds=c.bounds)
+        c_next.num_particles = c.num_particles  # KLUDGE this should be handled in Container to prevent inconsistencies
         def _posn_iter():
             for xs, vxs, axs in zip(c.positions, c.velocities, c_accelerations):
                 yield xs + vxs*dt + 0.5*axs*dt**2
         new_posns = list(_posn_iter())
-        c_next.positions = np.array(new_posns)  # TODO bounding done in setter
-        c_next.apply_force()  # TODO changes accelerations, calculates PE
+
+        # Need to hold on to previous velocities
+        c_next.set_positions_velocities_accelerations(
+            np.array(new_posns), c_velocities)
+        c_next.apply_force()  # verify changes accelerations, calculates PE
         kes = None  # Kinetic Energy
         lVxs = []  # l=list; store vxs values
         for xs, vxs, axs, axs_prev in zip(
@@ -150,9 +170,17 @@ class VerletIntegrator(object):
             if kes is None:
                 kes = np.zeros_like(new_vxs)
             kes += 0.5 * new_vxs**2  # mass is 1
-        c_next.velocities = np.array(lVxs)
+        c_next.set_velocities(np.array(lVxs))
         c_next.kinetic_energies = kes
         return c_next
+
+
+class VerletIntegratorTests(unittest.TestCase):
+##positions should change due to both velocity and acceleration
+##container result should have same bounds as initial container
+##container result should have positions bound
+##ideally, sum of PE and KE is constant throughout
+    pass
 
 
 
