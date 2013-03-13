@@ -15,10 +15,11 @@ import math
 from matplotlib.animation import FuncAnimation  # v1.1+
 
 from patku_sim import Container, VerletIntegrator
+from problems import *
 
 particle_radius = 2**(1.0/6)
 
-# Animation and circle code courtesy of Kevin Joyce
+# Circle code courtesy of Kevin Joyce
 def circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
     """ add a circle to ax or current axes
     """
@@ -33,24 +34,9 @@ def circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor
     e.set_alpha( alpha )
     return e
 
-init_container = Container()
 
-##One particle, number 5, has a tiny velocity in the upwards direction and goes a tiny bit slower in x.
 sim_name = 'line'
-ix_particle_to_highlight = None
-if sim_name == 'line':
-    ix_particle_to_highlight = 5
-    gamma = 1e-6
-    Lx = 10
-    Ly = 10
-    init_container.bounds = (Lx, Ly)
-    for i in xrange(1, Ly+1):
-        position = [Lx / 2.0, (i-0.5)]
-        if i == ix_particle_to_highlight:
-            init_container.add_particle(position, [1-gamma, gamma])
-        else:
-            init_container.add_particle(position, [1, 0])
-
+init_container, special_particles = get_container_for(sim_name)
 
 num_frames = 1000
 dt = 1e-2
@@ -78,27 +64,24 @@ pl.title('Molec Dyn Simulation', fontsize=16)
 pl.xlabel('X Position')
 pl.ylabel('Y Position')
 
-##particle_plots = [ax.plot([], [], marker='o')[0] for i in range(init_container.num_particles)]
-## Pre initializing is necessary I guess
+
+## (Kevin) Pre initializing is necessary I guess
 posns = init_container.positions
 circles = []
 for i,posn in enumerate(posns):
     facecolor = 'green'
-    if i == ix_particle_to_highlight:
+    if i in special_particles:
         facecolor = 'blue'
     e = circle(posn[0], posn[1], facecolor = facecolor)
     circles.append(ax.add_patch(e))
 
 def next_frame(i):
-##    global particle_plots
-##    for i,plot in zip(xrange(init_container.num_particles), particle_plots):
-##        plot.set_data(posns[i][0], posns[i][1])  # x and y
     posns = containers[i].positions
     for i,circle in zip(xrange(init_container.num_particles), circles):
         circle.center = (posns[i][0], posns[i][1])  # x and y
     return circles
 
-# Twice the frames because we run backwards
+# NOTE: Twice the frames because we run backwards too
 anim = FuncAnimation(fig, next_frame, frames=num_frames*2 - 1, interval=dt, blit=True)
 ##anim.save('pat_mol_dyn_{}_animation.avi'.format(sim_name), fps=30)
 pl.show()
