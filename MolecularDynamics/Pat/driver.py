@@ -17,10 +17,19 @@ from matplotlib.animation import FuncAnimation  # v1.1+
 from patku_sim import Container, VerletIntegrator
 from problems import *
 
-particle_radius = 2**(1.0/6)
+also_run_backwards = True
+save_animation = True
+num_forward_frames = 10 * 50
+frame_show_modulus = 10  # only show every nth frame
+dt = 1e-2
+sim_name = ['symmetry', 'problem_3', 'problem_1', 'line'][0]
+extra_params = {'Lx': 10,
+    'random_velocity': 0.1, 'random_particle_ix': 0,
+    'symmetry_number': 'six'}
+
 
 # Circle code courtesy of Kevin Joyce
-def circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
+def get_nice_circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
     """ add a circle to ax or current axes
     """
     e = pl.Circle([x, y], radius)
@@ -34,23 +43,21 @@ def circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor
     e.set_alpha( alpha )
     return e
 
+init_container, special_particles = get_container_for(sim_name, **extra_params)
+print 'special_particles:', special_particles
 
-sim_name = 'line'
-init_container, special_particles = get_container_for(sim_name)
-
-num_frames = 1000
-dt = 1e-2
 containers = [init_container]
 integrator = VerletIntegrator()
-for i in range(num_frames - 1):
+for i in xrange(num_forward_frames):
     next_container = integrator.step(containers[-1], dt)
     containers.append(next_container)
 end_container = containers[-1]
 
 # Now run... backwards!
-for i in range(num_frames - 1):
-    next_container = integrator.step(containers[-1], -dt)
-    containers.append(next_container)
+if also_run_backwards:
+    for i in xrange(num_forward_frames):
+        next_container = integrator.step(containers[-1], -dt)
+        containers.append(next_container)
 
 # Animate orbit
 # Code courtesy of George Lesica
@@ -69,19 +76,28 @@ pl.ylabel('Y Position')
 posns = init_container.positions
 circles = []
 for i,posn in enumerate(posns):
-    facecolor = 'green'
-    if i in special_particles:
-        facecolor = 'blue'
-    e = circle(posn[0], posn[1], facecolor = facecolor)
+    e = get_nice_circle(posn[0], posn[1])
     circles.append(ax.add_patch(e))
 
-def next_frame(i):
-    posns = containers[i].positions
+def next_frame(ix_frame):
+    ix_frame *= frame_show_modulus
+    posns = containers[ix_frame].positions
+    facecolor = 'green'
+    if also_run_backwards and ix_frame > num_forward_frames:
+        facecolor = 'purple'
     for i,circle in zip(xrange(init_container.num_particles), circles):
         circle.center = (posns[i][0], posns[i][1])  # x and y
+        if i in special_particles:
+            circle.set_facecolor('blue')
+        else:
+            circle.set_facecolor(facecolor)
     return circles
 
-# NOTE: Twice the frames because we run backwards too
-anim = FuncAnimation(fig, next_frame, frames=num_frames*2 - 1, interval=dt, blit=True)
-##anim.save('pat_mol_dyn_{}_animation.avi'.format(sim_name), fps=30)
+frames = num_forward_frames
+if also_run_backwards:
+    frames = num_forward_frames*2 + 1  # include initial one
+frames = int(frames / frame_show_modulus)
+anim = FuncAnimation(fig, next_frame, frames=frames, interval=dt, blit=True)
+if save_animation:
+    anim.save('pat_mol_dyn_{}_animation.avi'.format(sim_name), fps=30)
 pl.show()
