@@ -6,7 +6,7 @@
 from __future__ import division
 ##from scipy.integrate import odeint  # for integrate.odeint
 import numpy as np
-##import pylab as pl
+import pylab as pl
 import math
 import unittest
 ##import itertools
@@ -14,6 +14,22 @@ import unittest
 ##from collections import defaultdict, namedtuple
 
 ##from libs import Struct
+
+
+# Circle code courtesy of Kevin Joyce
+def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
+    """ add a circle to ax or current axes
+    """
+    e = pl.Circle([x, y], radius)
+    if ax is None:
+        ax = pl.gca()
+    ax.add_artist(e)
+    e.set_clip_box(ax.bbox)
+    e.set_edgecolor( color )
+    e.set_linewidth(3)
+    e.set_facecolor( facecolor )  # "none" not None
+    e.set_alpha( alpha )
+    return e
 
 
 def add_square_lattice(container, dimension, dx, dy, random_particle_ix=None, random_velocity=None):

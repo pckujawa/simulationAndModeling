@@ -14,7 +14,7 @@ import math
 ##from collections import defaultdict, namedtuple
 from matplotlib.animation import FuncAnimation  # v1.1+
 
-from patku_sim import Container, VerletIntegrator
+from patku_sim import Container, VerletIntegrator, moldyn
 from problems import *
 
 also_run_backwards = True
@@ -42,22 +42,6 @@ def squeeze(container, squeeze_factor, t):
 ##        c.y  *=  squeeze_factor
 ##where the squeeze isn't applied until the atoms settle down a little bit, and doesn't continue past the solid packing size. SQUEEZE_FACTORS > .995 work well. Only apply the squeeze about every 20 time steps
     return container
-
-
-# Circle code courtesy of Kevin Joyce
-def get_nice_circle(x, y, radius = 0.5*particle_radius, color="lightsteelblue", facecolor="green", alpha=.6, ax=None ):
-    """ add a circle to ax or current axes
-    """
-    e = pl.Circle([x, y], radius)
-    if ax is None:
-        ax = pl.gca()
-    ax.add_artist(e)
-    e.set_clip_box(ax.bbox)
-    e.set_edgecolor( color )
-    e.set_linewidth(3)
-    e.set_facecolor( facecolor )  # "none" not None
-    e.set_alpha( alpha )
-    return e
 
 init_container, special_particles = get_container_for(sim_name, **extra_params)
 print 'special_particles:', special_particles
@@ -92,7 +76,7 @@ pl.ylabel('Y Position')
 posns = init_container.positions
 circles = []
 for i,posn in enumerate(posns):
-    e = get_nice_circle(posn[0], posn[1])
+    e = moldyn.get_nice_circle(posn[0], posn[1], 0.5*particle_radius)
     circles.append(ax.add_patch(e))
 
 def next_frame(ix_frame):
