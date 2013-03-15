@@ -18,14 +18,30 @@ from patku_sim import Container, VerletIntegrator
 from problems import *
 
 also_run_backwards = True
-save_animation = True
+show_animation = True
+save_animation = False
 num_forward_frames = 10 * 50
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
-sim_name = ['symmetry', 'problem_3', 'problem_1', 'line'][0]
+sim_name = ['symmetry', 'problem_3', 'problem_1', 'line'][1]
 extra_params = {'Lx': 10,
     'random_velocity': 0.1, 'random_particle_ix': 0,
+    'lattice': ['triangle', 'square'][0],
     'symmetry_number': 'six'}
+
+
+def squeeze(container, squeeze_factor, t):
+    c = container
+    Lx, Ly = c.bounds
+    # c is the container object.
+    if t > 3. and Lx > 8.0 * 2.0**(1.0/6):
+        # Squeeze the box!
+        Lx *= squeeze_factor
+        Ly *= squeeze_factor
+##        c.x  *=  squeeze_factor
+##        c.y  *=  squeeze_factor
+##where the squeeze isn't applied until the atoms settle down a little bit, and doesn't continue past the solid packing size. SQUEEZE_FACTORS > .995 work well. Only apply the squeeze about every 20 time steps
+    return container
 
 
 # Circle code courtesy of Kevin Joyce
@@ -93,11 +109,29 @@ def next_frame(ix_frame):
             circle.set_facecolor(facecolor)
     return circles
 
-frames = num_forward_frames
+num_total_frames = num_forward_frames
 if also_run_backwards:
-    frames = num_forward_frames*2 + 1  # include initial one
-frames = int(frames / frame_show_modulus)
+    num_total_frames += num_forward_frames
+frames = int(num_total_frames / frame_show_modulus)
 anim = FuncAnimation(fig, next_frame, frames=frames, interval=dt, blit=True)
 if save_animation:
     anim.save('pat_mol_dyn_{}_animation.avi'.format(sim_name), fps=30)
+try:
+    if show_animation:
+        pl.show()
+    else:
+        pl.clf()
+except:  # in true python style, ignore weird Tk error when closing plot window
+    pass
+
+# Plot PE
+times = pl.frange(dt, num_total_frames*dt, dt)  # skip zeroth time because we have no value for it
+pes = [c.potential_energy for c in containers[1:]]  # skip first container because it has no PE
+plotted_pes = np.array(pes[:len(times)])
+plotted_pes /= init_container.num_particles  # PE per particle
+pl.plot(times, plotted_pes, 'o-', color='black', markersize=1, linewidth=0.1)
+pl.ylabel('Potential energy per particle')
+pl.xlabel('Time')
+pl.title('PE/particle for {}'.format(sim_name))
+pl.savefig('pat_mol_dyn_{}_pe.png'.format(sim_name))
 pl.show()

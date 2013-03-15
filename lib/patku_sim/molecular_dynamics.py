@@ -59,7 +59,7 @@ class Container(object):
         self._velocities = []
         self._accelerations = []
         self.kinetic_energies = []
-        self.potential_energies = []
+        self.potential_energy = None
         self.num_particles = 0
 
     def add_particle(self, position, velocity=None, acceleration=None):
@@ -116,7 +116,7 @@ class Container(object):
         distance_matrices = self.get_distance_matrices()
         accelerations, pe = lennardJonesForce(distance_matrices)
         self._accelerations = accelerations
-        self.potential_energies.append(pe)
+        self.potential_energy = pe
 
     def bound(self, points):
         """Wrap points in space within this torus, ensuring that no dimension is out of bounds.

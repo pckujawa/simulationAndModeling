@@ -97,6 +97,11 @@ def problem_1(container, special_particles, **extra_params):
     container.bounds = (Lx, Ly)
     dx = Lx / float(N)
     dy = Ly / float(N)
+    add_triangle_lattice(container, N, dx, dy)
+    return container, special_particles
+
+
+def add_triangle_lattice(container, N, dx, dy):
     for i in range(N):
         for j in range(N):
             y = dy * (j + 0.5)
@@ -105,12 +110,12 @@ def problem_1(container, special_particles, **extra_params):
             else:
                 x = dx * (i + 0.75)
             container.add_particle([x, y], [0, 0])  # , mass=1
-    return container, special_particles
 
 
 def problem_3(container, special_particles, **extra_params):
     """Initial positions of the particles are on the nodes of a square lattice. Choose N = 64 atoms and Lx = Ly = 9. All velocities are initially zero.
     """
+
     random_velocity = extra_params.get('random_velocity', None)
     random_particle_ix = extra_params.get('random_particle_ix', None)  # TODO `or random_ix`
     if random_particle_ix is not None:
@@ -121,6 +126,10 @@ def problem_3(container, special_particles, **extra_params):
     container.bounds = (Lx, Ly)
     dx = Lx / float(N)
     dy = Ly / float(N)
+    add_square_lattice(container, N, dx, dy, random_particle_ix, random_velocity)
+    return container, special_particles
+
+def add_square_lattice(container, N, dx, dy, random_particle_ix=None, random_velocity=None):
     for i in xrange(N):
         for j in xrange(N):
             vx, vy = 0, 0
@@ -129,7 +138,6 @@ def problem_3(container, special_particles, **extra_params):
             x = dx * (i + 0.5)
             y = dy * (j + 0.5)
             container.add_particle([x, y], [vx, vy])  # , mass)
-    return container, special_particles
 
 
 name_to_sim = {
