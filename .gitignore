@@ -43,3 +43,10 @@ MolecularDynamics/Jaylene
 ObjectOrientedOrbits/Jaylene
 Planetary\ Model/pat_img
 Simple\ ODEs\ and\ conservation
+
+# Videos and such
+*.avi
+*.mpg
+*.png
+
+.dropbox
