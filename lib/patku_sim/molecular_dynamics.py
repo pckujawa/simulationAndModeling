@@ -16,6 +16,34 @@ import unittest
 ##from libs import Struct
 
 
+def add_square_lattice(container, dimension, dx, dy, random_particle_ix=None, random_velocity=None):
+    """
+    :param dimension: length of one of two identical dimensions
+    """
+    for i in xrange(dimension):
+        for j in xrange(dimension):
+            vx, vy = 0, 0
+            if i*8 + j == random_particle_ix:
+                vy = random_velocity or 1  # TODO make random value
+            x = dx * (i + 0.5)
+            y = dy * (j + 0.5)
+            container.add_particle([x, y], [vx, vy])  # , mass)
+
+
+def add_triangle_lattice(container, dimension, dx, dy):
+    """
+    :param dimension: length of one of two identical dimensions
+    """
+    for i in xrange(dimension):
+        for j in xrange(dimension):
+            y = dy * (j + 0.5)
+            if j % 2 == 0:
+                x = dx * (i + 0.25)
+            else:
+                x = dx * (i + 0.75)
+            container.add_particle([x, y], [0, 0])  # , mass=1
+
+
 def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     """
     :param radius: same as $\sigma$
