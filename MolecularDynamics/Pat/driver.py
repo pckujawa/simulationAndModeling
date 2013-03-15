@@ -15,7 +15,7 @@ import math
 from matplotlib.animation import FuncAnimation  # v1.1+
 
 from patku_sim import Container, VerletIntegrator, moldyn
-from problems import *
+from problems import get_container_for
 
 also_run_backwards = True
 show_animation = True
