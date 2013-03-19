@@ -15,15 +15,19 @@ import math
 from matplotlib.animation import FuncAnimation  # v1.1+
 
 from patku_sim import Container, VerletIntegrator, moldyn
+from patku_sim.libs import Struct
 
 also_run_backwards = False
 show_animation = True
-save_animation = True
+save_animation = False
 particle_radius = 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
 sim_name = 'friction'
-xlim, ylim = (0, 50), (-5, 5*particle_radius)
+xlim, ylim = (0, 20), (-1, 5) # (0, 50), (-5, 5*particle_radius)
+figsize = (10, 4)
+sled_conditions = (5, 10)
+num_frames_to_bootstrap = 100
 
 
 def create(cnt_sled_particles, cnt_floor_particles=100):
@@ -33,19 +37,32 @@ def create(cnt_sled_particles, cnt_floor_particles=100):
     c = Container()
     a = particle_radius
     # Make floor with particles spaced 'a' apart
-    for i in xrange(cnt_floor_particles):
-        c.add_particle([a*i, 0])
-    # Make sled with particles in equilateral triangle of side length '2a' with two particles placed 'a' above floor starting at a/2
+    floor_ixs = range(cnt_floor_particles)
+    for i in floor_ixs:
+        c.add_particle([a*i-1, 0])
+    c.floor_particle_ixs = floor_ixs
+    # Make sled with particles in equilateral triangle of side length '2a' with base of two particles placed 'a' above floor starting at a/2
+    top = Struct(x = 3.0*a/2, y = a * (math.sqrt(3) + 1))
+    bottom = Struct(x = a/2.0, y = a)
+    sled_ixs = range(cnt_sled_particles)
+    for i in sled_ixs:
+        if i % 2 == 1:
+            side = top
+        else:
+            side = bottom
+        c.add_particle([side.x, side.y])
+        side.x += 2*a
+    c.sled_particle_ixs = sled_ixs
     # Connect sled particles like a trianglular truss
     return c
 
-init_container = create(13, 5)
+init_container = create(*sled_conditions)
 containers = [init_container]
 integrator = VerletIntegrator()
 
 # Animate orbit
 # Code courtesy of George Lesica
-fig = pl.figure(figsize=(8, 4))
+fig = pl.figure(figsize=figsize)
 ax = pl.axes(xlim=xlim, ylim=ylim)  # necessary for animation to know correct bounds
 ax.set_aspect('equal')
 ##ax.set_xlim((0, init_container.bounds[0]))
@@ -64,11 +81,17 @@ for i,posn in enumerate(posns):
 
 num_forward_frames = 0
 # Bootstrap some frames
-while num_forward_frames < 500:
+while num_forward_frames < num_frames_to_bootstrap:
     num_forward_frames += 1
-    for _ in xrange(1 + frame_show_modulus):  # always run at least once
-        next_container = integrator.step(containers[-1], dt)
-        containers.append(next_container)
+    next_container = integrator.step(containers[-1], dt)
+    containers.append(next_container)
+
+# init fn seems to prevent 'ghosting' of first-plotted data in others' code
+def init():
+    """initialize animation"""
+    for c in circles:
+        c.center = (-1, -1)  # hide (hopefully) off-screen
+    return circles
 
 def next_frame(ix_frame):
     global num_forward_frames
@@ -87,13 +110,9 @@ def next_frame(ix_frame):
         circle.set_facecolor(facecolor)
     return circles
 
-anim = FuncAnimation(fig, next_frame, interval=dt, blit=True)
-try:
-    if show_animation:
-        pl.show()
-except:  # in true python style, ignore weird Tk error when closing plot window
-    pass
-pl.clf()
+anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, init_func=init)
+if show_animation:
+    pl.show()
 
 end_container = containers[-1]
 
@@ -112,9 +131,13 @@ if also_run_backwards:
 if save_animation:
     # Seems like we need to re-run to get the full movie
     anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
-    anim.save('mol_dyn_friction_{}_animation.avi'.format(num_forward_frames), fps=30)
+    try:
+        anim.save('mol_dyn_friction_{}_animation.avi'.format(num_forward_frames), fps=30)
+    except:  # Tk error
+        pass
 
 
+pl.clf()
 # Plot PE --------------------------
 times = pl.frange(dt, num_total_frames*dt, dt)  # skip zeroth time because we have no value for it
 pes = [c.potential_energy for c in containers[1:]]  # skip first container because it has no PE
