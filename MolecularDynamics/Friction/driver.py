@@ -20,13 +20,13 @@ from patku_sim.libs import Struct
 also_run_backwards = False
 show_animation = True
 save_animation = False
-particle_radius = 1 # 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
+particle_radius = 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
 sim_name = 'friction'
 xlim, ylim = (0, 20), (-1, 5) # (0, 50), (-5, 5*particle_radius)
 figsize = (10, 4)
-sled_conditions = (5, 10)
+sled_conditions = (5, 10)  # sled, floor
 spring_const = 10
 num_frames_to_bootstrap = 100
 
@@ -63,7 +63,7 @@ containers = [init_container]
 integrator = VerletIntegrator()
 integrator.sled_forcer = moldyn.SledForcer(2*particle_radius, u=last_particle_position, k=spring_const)
 
-# Animate orbit
+# Animate
 # Code courtesy of George Lesica
 fig = pl.figure(figsize=figsize)
 ax = pl.axes(xlim=xlim, ylim=ylim)  # necessary for animation to know correct bounds
@@ -74,13 +74,13 @@ pl.title('Molec Dyn Friction Simulation', fontsize=16)
 pl.xlabel('X Position')
 pl.ylabel('Y Position')
 
-
 ## (Kevin) Pre initializing is necessary I guess
 posns = init_container.positions
 circles = []
 for i,posn in enumerate(posns):
     e = moldyn.get_nice_circle(posn[0], posn[1], 0.5*particle_radius)
     circles.append(ax.add_patch(e))
+time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
 
 num_forward_frames = 0
 # Bootstrap some frames
@@ -92,9 +92,10 @@ while num_forward_frames < num_frames_to_bootstrap:
 # init fn seems to prevent 'ghosting' of first-plotted data in others' code
 def init():
     """initialize animation"""
+    time_text.set_text('')
     for c in circles:
         c.center = (-1, -1)  # hide (hopefully) off-screen
-    return circles
+    return circles + [time_text]
 
 def next_frame(ix_frame):
     global num_forward_frames
@@ -105,13 +106,15 @@ def next_frame(ix_frame):
         for _ in xrange(1 + frame_show_modulus):  # always run at least once
             next_container = integrator.step(containers[-1], dt)
             containers.append(next_container)
-    posns = containers[ix_frame].positions
+    c = containers[ix_frame]
+    posns = c.positions
+    time_text.set_text('time = %.1f' % c.time)
     facecolor = 'green'
     # TODO paint floor black, sled green, etc
     for i,circle in zip(xrange(init_container.num_particles), circles):
         circle.center = (posns[i][0], posns[i][1])  # x and y
         circle.set_facecolor(facecolor)
-    return circles
+    return circles + [time_text]
 
 anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, init_func=init)
 if show_animation:

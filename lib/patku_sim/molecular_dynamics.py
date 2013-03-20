@@ -114,24 +114,28 @@ class SledForcer(object):
         """
         vx, vy = drag_velocities
         dms = get_distance_matrices(positions)
-        eqs = np.array([1, math.sqrt(3)]) * 0.5 * self.spring_eq_dist  # x and y equilibrium distances are different from r distance
         spring_accels = np.zeros_like(positions)
+        dr = dms[-1]
+        force_spring = self.k * (dr - self.spring_eq_dist)  # NOTE: *Not* negative, as in Jesse's code!
+        # Each sled particle is only connected to the particles within two indices of itself, so eliminate others (and self-effects)
+        #  There's probably a slicker way to create a matrix for the connections...
+        size = len(positions)
+        diag1 = np.ones((size-1,))
+        diag2 = np.ones((size-2,))
+        spring_connections = \
+            np.diagflat(diag1, 1) + \
+            np.diagflat(diag1, -1) + \
+            np.diagflat(diag2, 2) + \
+            np.diagflat(diag2, -2)
+        no_spring_connections = spring_connections != 1
+        force_spring[no_spring_connections] = 0
+        # Finally, find the directional accelerations
+        dr += np.eye(*dr.shape)  # 'hide' zeros on diagonal from denominator
         for ix_dim, dx in enumerate(dms[:-1]):  # skip dr
-            eq = eqs[ix_dim]
-            force_spring = -self.k * (
-                np.triu(dx - eq) + np.tril(dx + eq))
-            # Each sled particle is only connected to the particles within two indices of itself, so eliminate others (and self-effects)
-            #  There's probably a slicker way to create a matrix for the connections...
-            spring_connections = \
-                np.diagflat(np.ones((4,)), 1) + \
-                np.diagflat(np.ones((4,)), -1) + \
-                np.diagflat(np.ones((3,)), 2) + \
-                np.diagflat(np.ones((3,)), -2)
-            no_spring_connections = spring_connections != 1
-            force_spring[no_spring_connections] = 0
-            spring_accels[:,ix_dim] = np.sum(force_spring, axis=1)  # one accel per particle per dimension
-            #TODO
-            force_dragging = -10 * (vx + vy)
+            directional_accels = dx/dr * force_spring
+            spring_accels[:,ix_dim] = np.sum(directional_accels, axis=1)  # one accel per particle per dimension
+        #TODO
+        force_dragging = -10 * (vx + vy)
         #TODO
         force_pulling = self.k * (0.1*time - self.u)  # n-dimensional
         return spring_accels
