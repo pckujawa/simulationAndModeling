@@ -17,15 +17,16 @@ from matplotlib.animation import FuncAnimation  # v1.1+
 from patku_sim import Container, VerletIntegrator, moldyn
 from problems import get_container_for
 
-also_run_backwards = True
+also_run_backwards = False
 show_animation = True
 save_animation = False
-num_forward_frames = 10 * 50
+particle_radius = 2**(1.0/6)
+num_forward_frames = 5000
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
-sim_name = ['symmetry', 'problem_3', 'problem_1', 'line'][1]
+sim_name = ['symmetry', 'problem_3', 'problem_1', 'line'][0]
 extra_params = {'Lx': 10,
-    'random_velocity': 0.1, 'random_particle_ix': 0,
+    'random_velocity': 0, 'random_particle_ix': 0,
     'lattice': ['triangle', 'square'][0],
     'symmetry_number': 'six'}
 
@@ -79,6 +80,11 @@ for i,posn in enumerate(posns):
     e = moldyn.get_nice_circle(posn[0], posn[1], 0.5*particle_radius)
     circles.append(ax.add_patch(e))
 
+def init():
+    for c in circles:
+        c.center = (-1, -1)  # hide
+    return circles
+
 def next_frame(ix_frame):
     ix_frame *= frame_show_modulus
     posns = containers[ix_frame].positions
@@ -97,7 +103,7 @@ num_total_frames = num_forward_frames
 if also_run_backwards:
     num_total_frames += num_forward_frames
 frames = int(num_total_frames / frame_show_modulus)
-anim = FuncAnimation(fig, next_frame, frames=frames, interval=dt, blit=True)
+anim = FuncAnimation(fig, next_frame, frames=frames, interval=dt, blit=True, init_func = init)
 if save_animation:
     anim.save('pat_mol_dyn_{}_animation.avi'.format(sim_name), fps=30)
 try:
