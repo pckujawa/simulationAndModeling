@@ -107,13 +107,13 @@ class SledForcer(object):
         self.k = k
         self.u = np.array(u)
 
-    def apply_force(self, positions, time, drag_velocities):
+    def apply_force(self, positions, time, damping_vs):
         """
         :param positions: list of lists/arrays, sled particle positions matching the convention that 0 is the bottom left and last is the bottom right
-        :returns: accelerations for each particle in the sled due to springs, pulling, and dragging
-        :rtype: tuple(spring, pull, drag)
+        :returns: accelerations for each particle in the sled due to springs, pulling, and damping
+        :rtype: tuple(spring, pull, damp)
         """
-        vx, vy = drag_velocities
+        vx, vy = damping_vs
         dms = get_distance_matrices(positions)
         dr = dms[-1]
         force_spring = self.k * (dr - self.spring_eq_dist)  # NOTE: *Not* negative, as in Jesse's code!
@@ -131,21 +131,25 @@ class SledForcer(object):
         force_spring[no_spring_connections] = 0
         # Finally, find the directional accelerations
         spring_accels = np.zeros_like(positions)
-        dragging_accels = np.zeros_like(positions)  # only use the first slot
+        damping_as = np.zeros_like(positions)  # only use the first slot
         pulling_accels = np.zeros_like(positions)  # only use the last slot
         dr += np.eye(*dr.shape)  # 'hide' zeros on diagonal from denominator
         displacement = positions[-1] - self.u
         for ix_dim, dx in enumerate(dms[:-1]):  # skip dr
             x_hat = dx/dr  # not exactly x^, but similar
             directional_accels = x_hat * force_spring
-            spring_accels[:,ix_dim] = np.sum(directional_accels, axis=1)  # one accel per particle per dimension
-            dragging_accels[0,ix_dim] = drag_velocities[ix_dim]
+            spring_accels[:, ix_dim] = np.sum(directional_accels, axis=1)  # one accel per particle per dimension
+            damping_as[0, ix_dim] = damping_vs[ix_dim]
             if ix_dim == 0:  # only horizontal pulling
-                pulling_accels[-1,ix_dim] = (1*time - displacement[ix_dim])  # 0.1 is too weak; takes forever to pull
-        dragging_accels *= -self.drag_force_multiplier
-        pulling_accels[pulling_accels < 0] = 0  # no negative pulling
+                pulling_accels[-1, ix_dim] = (0.1*time - displacement[ix_dim])  # 0.1 is too weak; takes forever to pull
+        damping_as *= -self.damp_force_multiplier
+        print time
+        print damping_as[0]
+        print '===='
+        if not self.allow_negative_pull_force:
+            pulling_accels[pulling_accels < 0] = 0  # no negative pulling
         pulling_accels *= self.pulling_force_multiplier
-        return spring_accels, pulling_accels, dragging_accels
+        return spring_accels, pulling_accels, damping_as
 
 
 class Container(object):
@@ -213,15 +217,20 @@ class Container(object):
         self.potential_energy = pe
         try:
             # If we have a sled, apply spring forces
-            sled_posns = self._positions[self.sled_particle_ixs[0]:]
-            assert self.sled_particle_ixs[-1] == self.num_particles-1
-            drag_velocities = self._velocities[-1]  # last particle
-            spring, pull, drag = sled_forcer.apply_force(sled_posns, self.time, drag_velocities)
+            ix_damper = self.sled_particle_ixs[0]
+            ix_puller = self.sled_particle_ixs[-1]
+            sled_posns = self._positions[ix_damper:]
+            assert ix_puller == self.num_particles-1
+            damping_vs = self._velocities[ix_damper]  # first sled particle
+            spring, pull, damp = sled_forcer.apply_force(sled_posns, self.time, damping_vs)
             self.spring_accelerations = spring
             self.pull_accelerations = pull[-1]
-            self.drag_accelerations = drag[0]
-            sled_accelerations = spring + pull + drag
+            self.damp_accelerations = damp[0]
+            sled_accelerations = spring + pull + damp
             accelerations[self.sled_particle_ixs] += sled_accelerations
+##            print 'a=', damp[0], spring[0]
+##            print 'a_t=', sled_accelerations[0]
+##            print 'a_damp=', accelerations[ix_damper]
             # If we have a floor, keep it still
             accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
 ##            assert np.all(self.velocities[self.floor_particle_ixs] == 0)

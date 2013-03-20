@@ -19,18 +19,21 @@ from patku_sim.libs import Struct
 
 also_run_backwards = False
 show_animation = True
-save_animation = True
+save_animation = False
 particle_radius = 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
-frame_show_modulus = 10  # only show every nth frame
+frame_show_modulus = 5  # only show every nth frame
 dt = 1e-2
 sim_name = 'friction'
-xlim, ylim = (0, 20), (-1, 5) # (0, 50), (-5, 5*particle_radius)
+xlim, ylim = (0, 30), (-1, 5) # (0, 50), (-5, 5*particle_radius)
 figsize = (10, 4)
-sled_conditions = (5, 20)  # sled, floor
-spring_const = 1e3
-pulling_force_multiplier = 1e1
-drag_force_multiplier = 5e0
-num_frames_to_bootstrap = 200
+sled_conditions = (13, 25)  # sled, floor
+spring_const = 5e0
+pulling_force_multiplier = 5e0
+allow_negative_pull_force = True
+damp_force_multiplier = 1e2
+num_frames_to_bootstrap = 0
+info_for_naming = '{} dt={:.3f} k={:.1f} Fpm={:.1f}(-{}) Fdm={:.1f}'.format(sled_conditions, dt, spring_const, pulling_force_multiplier, allow_negative_pull_force, damp_force_multiplier)
+print 'running with', info_for_naming
 
 last_particle_position = None
 def create(cnt_sled_particles, cnt_floor_particles=100):
@@ -42,7 +45,7 @@ def create(cnt_sled_particles, cnt_floor_particles=100):
     # Make floor with particles spaced 'a' apart
     floor_ixs = range(cnt_floor_particles)
     for i in floor_ixs:
-        c.add_particle([a*i-1, 0])
+        c.add_particle([a*(i-1), 0])
     c.floor_particle_ixs = floor_ixs
     # Make sled with particles in equilateral triangle of side length '2a' with base of two particles placed 'a' above floor starting at a/2
     top = Struct(x = 3.0*a/2, y = a * (math.sqrt(3) + 1))
@@ -56,8 +59,6 @@ def create(cnt_sled_particles, cnt_floor_particles=100):
         c.add_particle(last_particle_position)
         side.x += 2*a
     c.sled_particle_ixs = np.array(range(cnt_sled_particles)) + cnt_floor_particles
-    # Connect sled particles like a trianglular truss
-
     return c
 
 init_container = create(*sled_conditions)
@@ -65,7 +66,8 @@ containers = [init_container]
 integrator = VerletIntegrator()
 sled_forcer = moldyn.SledForcer(2*particle_radius, u=last_particle_position, k=spring_const)
 sled_forcer.pulling_force_multiplier = pulling_force_multiplier
-sled_forcer.drag_force_multiplier = drag_force_multiplier
+sled_forcer.allow_negative_pull_force = allow_negative_pull_force
+sled_forcer.damp_force_multiplier = damp_force_multiplier
 integrator.sled_forcer = sled_forcer
 
 # Animate
@@ -75,9 +77,7 @@ ax = pl.axes(xlim=xlim, ylim=ylim)  # necessary for animation to know correct bo
 ax.set_aspect('equal')
 ##ax.set_xlim((0, init_container.bounds[0]))
 ##ax.set_ylim((0, init_container.bounds[1]))
-pl.title('Molec Dyn Friction dt={:.3f} k={:.1f} Fp*={:.1f} Fd*={:.1f}'.format(
-    dt, spring_const, pulling_force_multiplier, drag_force_multiplier
-    ), fontsize=16)
+pl.title('Molec Dyn Friction ' + info_for_naming, fontsize=16)
 pl.xlabel('X Position')
 pl.ylabel('Y Position')
 
@@ -89,40 +89,42 @@ for i,posn in enumerate(posns):
     circles.append(ax.add_patch(e))
 time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
 pulling_force_text = ax.text(0.5, 0.90, '', transform=ax.transAxes)
-drag_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
+damp_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
 
 num_forward_frames = 0
 # Bootstrap some frames
 while num_forward_frames < num_frames_to_bootstrap:
     num_forward_frames += 1
-    next_container = integrator.step(containers[-1], dt)
-    containers.append(next_container)
+    for i in xrange(frame_show_modulus):
+        next_container = integrator.step(containers[-1], dt)
+        containers.append(next_container)
 
 # init fn seems to prevent 'ghosting' of first-plotted data in others' code
 def init():
     """initialize animation"""
     time_text.set_text('')
     pulling_force_text.set_text('')
-    drag_force_text.set_text('')
+    damp_force_text.set_text('')
     for c in circles:
         c.center = (-1, -1)  # hide (hopefully) off-screen
-    return circles + [time_text, pulling_force_text, drag_force_text]
+    return circles + [time_text, pulling_force_text, damp_force_text]
 
 def next_frame(ix_frame):
     global num_forward_frames
     print 'frame', ix_frame
     # Do only the integration necessary to get to the requested frame
-    while num_forward_frames < ix_frame:
+    container_ix = ix_frame*frame_show_modulus
+    while num_forward_frames <= ix_frame:
         num_forward_frames += 1
         for _ in xrange(1 + frame_show_modulus):  # always run at least once
             next_container = integrator.step(containers[-1], dt)
             containers.append(next_container)
-    c = containers[ix_frame]
+    c = containers[container_ix]
     posns = c.positions
     try:
         time_text.set_text('time = %.1f' % c.time)
         pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
-        drag_force_text.set_text('Fd = ' + str(c.drag_accelerations))
+        damp_force_text.set_text('Fd = ' + str(c.damp_accelerations))
     except AttributeError:
         pass
     facecolor = 'green'
@@ -130,7 +132,7 @@ def next_frame(ix_frame):
     for i,circle in zip(xrange(init_container.num_particles), circles):
         circle.center = (posns[i][0], posns[i][1])  # x and y
         circle.set_facecolor(facecolor)
-    return circles + [time_text, pulling_force_text, drag_force_text]
+    return circles + [time_text, pulling_force_text, damp_force_text]
 
 anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, init_func=init)
 if show_animation:
@@ -154,7 +156,8 @@ if save_animation:
     # Seems like we need to re-run to get the full movie
     anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
     try:
-        anim.save('mol_dyn_friction_{}_animation.avi'.format(num_forward_frames), fps=30)
+        print 'beginning save of animation with frame count:', num_forward_frames
+        anim.save('anim/anim {}.avi'.format(info_for_naming), fps=30)
         pl.clf()
     except:  # Tk error
         pass
@@ -170,5 +173,6 @@ pl.plot(times, plotted_pes, 'o-', color='black', markersize=1, linewidth=0.1)
 pl.ylabel('Potential energy per particle')
 pl.xlabel('Time')
 pl.title('PE/particle for {} frames'.format(num_forward_frames))
-pl.savefig('mol_dyn_{}_pe.png'.format(num_forward_frames))
-pl.show()
+pl.savefig('plots/pe {}.png'.format(info_for_naming))
+##pl.show()
+pl.clf()
