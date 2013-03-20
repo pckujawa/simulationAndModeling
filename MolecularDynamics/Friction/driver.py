@@ -19,18 +19,18 @@ from patku_sim.libs import Struct
 
 also_run_backwards = False
 show_animation = True
-save_animation = False
+save_animation = True
 particle_radius = 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
 sim_name = 'friction'
 xlim, ylim = (0, 20), (-1, 5) # (0, 50), (-5, 5*particle_radius)
 figsize = (10, 4)
-sled_conditions = (5, 10)  # sled, floor
-spring_const = 10.0
-pulling_force_multiplier = 50.0
-drag_force_multiplier = 1.0
-num_frames_to_bootstrap = 100
+sled_conditions = (5, 20)  # sled, floor
+spring_const = 1e3
+pulling_force_multiplier = 1e1
+drag_force_multiplier = 5e0
+num_frames_to_bootstrap = 200
 
 last_particle_position = None
 def create(cnt_sled_particles, cnt_floor_particles=100):
@@ -75,7 +75,9 @@ ax = pl.axes(xlim=xlim, ylim=ylim)  # necessary for animation to know correct bo
 ax.set_aspect('equal')
 ##ax.set_xlim((0, init_container.bounds[0]))
 ##ax.set_ylim((0, init_container.bounds[1]))
-pl.title('Molec Dyn Friction Simulation', fontsize=16)
+pl.title('Molec Dyn Friction dt={:.3f} k={:.1f} Fp*={:.1f} Fd*={:.1f}'.format(
+    dt, spring_const, pulling_force_multiplier, drag_force_multiplier
+    ), fontsize=16)
 pl.xlabel('X Position')
 pl.ylabel('Y Position')
 
@@ -117,9 +119,12 @@ def next_frame(ix_frame):
             containers.append(next_container)
     c = containers[ix_frame]
     posns = c.positions
-    time_text.set_text('time = %.1f' % c.time)
-    pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
-    drag_force_text.set_text('Fd = ' + str(c.drag_accelerations))
+    try:
+        time_text.set_text('time = %.1f' % c.time)
+        pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
+        drag_force_text.set_text('Fd = ' + str(c.drag_accelerations))
+    except AttributeError:
+        pass
     facecolor = 'green'
     # TODO paint floor black, sled green, etc
     for i,circle in zip(xrange(init_container.num_particles), circles):
@@ -150,6 +155,7 @@ if save_animation:
     anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
     try:
         anim.save('mol_dyn_friction_{}_animation.avi'.format(num_forward_frames), fps=30)
+        pl.clf()
     except:  # Tk error
         pass
 

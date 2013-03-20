@@ -134,17 +134,17 @@ class SledForcer(object):
         dragging_accels = np.zeros_like(positions)  # only use the first slot
         pulling_accels = np.zeros_like(positions)  # only use the last slot
         dr += np.eye(*dr.shape)  # 'hide' zeros on diagonal from denominator
-        if time > 0.3:
-            pass
+        displacement = positions[-1] - self.u
         for ix_dim, dx in enumerate(dms[:-1]):  # skip dr
             x_hat = dx/dr  # not exactly x^, but similar
             directional_accels = x_hat * force_spring
             spring_accels[:,ix_dim] = np.sum(directional_accels, axis=1)  # one accel per particle per dimension
             dragging_accels[0,ix_dim] = drag_velocities[ix_dim]
-            displacement = positions[-1][ix_dim] - self.u[ix_dim]
-            pulling_accels[-1,ix_dim] = (0.1*time - displacement)
+            if ix_dim == 0:  # only horizontal pulling
+                pulling_accels[-1,ix_dim] = (1*time - displacement[ix_dim])  # 0.1 is too weak; takes forever to pull
         dragging_accels *= -self.drag_force_multiplier
-        pulling_accels *= self.pulling_force_multiplier #self.k
+        pulling_accels[pulling_accels < 0] = 0  # no negative pulling
+        pulling_accels *= self.pulling_force_multiplier
         return spring_accels, pulling_accels, dragging_accels
 
 
