@@ -65,6 +65,7 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     :param radius: same as $\sigma$
     :param epsilon: Constant of proportionality
     :returns: accelerations and potential energy
+    :rtype: tuple(ndarray, float)
     """
     # Find position differences
     dr = distance_matrices[-1]
@@ -96,6 +97,46 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     pe = 4.0 * epsilon * np.sum(np.sum(np.triu(over12 - over6, k=1)))
     return accelerations.transpose(), pe
 
+
+class SledForcer(object):
+    def __init__(self, equilibrium_distance, u, k = 10):
+        """
+        :param u: initial position of the bottom right sled particle
+        """
+        self.spring_eq_dist = equilibrium_distance
+        self.k = k
+        self.u = np.array(u)
+
+    def apply_force(self, positions, time, drag_velocities):
+        """
+        :param positions: list of lists/arrays, sled particle positions matching the convention that 0 is the bottom left and last is the bottom right
+        :returns: accelerations for each particle in the sled due to springs
+        """
+        vx, vy = drag_velocities
+        dms = get_distance_matrices(positions)
+        eqs = np.array([1, math.sqrt(3)]) * 0.5 * self.spring_eq_dist  # x and y equilibrium distances are different from r distance
+        spring_accels = np.zeros_like(positions)
+        for ix_dim, dx in enumerate(dms[:-1]):  # skip dr
+            eq = eqs[ix_dim]
+            force_spring = -self.k * (
+                np.triu(dx - eq) + np.tril(dx + eq))
+            # Each sled particle is only connected to the particles within two indices of itself, so eliminate others (and self-effects)
+            #  There's probably a slicker way to create a matrix for the connections...
+            spring_connections = \
+                np.diagflat(np.ones((4,)), 1) + \
+                np.diagflat(np.ones((4,)), -1) + \
+                np.diagflat(np.ones((3,)), 2) + \
+                np.diagflat(np.ones((3,)), -2)
+            no_spring_connections = spring_connections != 1
+            force_spring[no_spring_connections] = 0
+            spring_accels[:,ix_dim] = np.sum(force_spring, axis=1)  # one accel per particle per dimension
+            #TODO
+            force_dragging = -10 * (vx + vy)
+        #TODO
+        force_pulling = self.k * (0.1*time - self.u)  # n-dimensional
+        return spring_accels
+
+
 class Container(object):
     def __init__(self, bounds=None):
         self.bounds = bounds
@@ -105,6 +146,7 @@ class Container(object):
         self.kinetic_energies = []
         self.potential_energy = None
         self.num_particles = 0
+        self.time = 0  # point in time
 
     def add_particle(self, position, velocity=None, acceleration=None):
         """Add one particle of n dimensions, *unbounded*.
@@ -154,13 +196,23 @@ class Container(object):
             accelerations = np.zeros_like(positions)
         self._accelerations = accelerations.tolist()
 
-    def apply_force(self):
-##        for a in self._accelerations:
-##            a[0] += 0.1  # increase only first dimension
+    def apply_force(self, sled_forcer=None):
         distance_matrices = self.get_distance_matrices()
         accelerations, pe = lennardJonesForce(distance_matrices)
-        self._accelerations = accelerations
         self.potential_energy = pe
+        try:
+            # If we have a sled, apply spring forces
+            sled_posns = self._positions[self.sled_particle_ixs[0]:]
+            assert self.sled_particle_ixs[-1] == self.num_particles-1
+            drag_velocities = self._velocities[-1]  # last particle
+            sled_accelerations = sled_forcer.apply_force(sled_posns, self.time, drag_velocities)
+            assert len(sled_accelerations) == len(self.sled_particle_ixs)
+            accelerations[self.sled_particle_ixs] += sled_accelerations
+            # If we have a floor, keep it still
+            accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
+        except AttributeError:
+            pass
+        self._accelerations = accelerations.tolist()
 
     def bound(self, points):
         """Wrap points in space within this torus, ensuring that no dimension is out of bounds.
@@ -191,45 +243,46 @@ class Container(object):
         return bounded
 
     def get_distance_matrices(self):
-        return self._get_distance_matrices(*self._positions)
+        return get_distance_matrices(self._positions, self.bounds)
 
-    def _get_distance_matrices(self, *points):
-        """Calculates the distances between all points for each dimension and radially.
 
-        :type points: lists or arrays
-        :returns: each dimension's distance matrix, in same order as passed in, followed by radial distance matrix
-        """
-        cPoints = len(points)
-        if cPoints < 2:
-            raise ValueError("Distance mtx for one point is the point's dimensions. Perhaps you meant to provide more than one point to this function. Maybe you need to unpack your list/tuple.")
-        # Ensure each point has the same dimension
-        cDim = len(points[0])  # count of dimensions
-        for p in points:
-            assert len(p) == cDim
-        aPoints = np.array(points)
-        # Use an inner iteration function because it's more versatile and easier to code than appending to a list
-        def _iter():
-            for i in xrange(cDim):
-                xs = aPoints[:,i]
-                xdist = np.tile(xs, (cPoints, 1))
-                xdist = xdist - xdist.T
-                if self.bounds is not None:
-                    try:
-                        xbound = self.bounds[i]
-                    except IndexError:
-                        raise Exception("There aren't enough boundaries for the number of dimensions in the points. Ensure that your bounds are of the same dimension as your points.")
-                    xdist[xdist > xbound / 2.0] -= xbound
-                    assert not np.any(xdist > xbound/2.0)
-                    xdist[xdist < -xbound / 2.0] += xbound
-                    assert not np.any(xdist < -xbound/2.0)
-                yield xdist
-        linear_distances = list(_iter())
-        radial_distance = np.zeros_like(linear_distances[0])
-        for x in linear_distances:
-            radial_distance += x**2
-        radial_distance = np.sqrt(radial_distance)
-        linear_distances.append(radial_distance)  # too lazy to name a temp variable
-        return linear_distances
+def get_distance_matrices(points, bounds=None):
+    """Calculates the distances between all points for each dimension and radially.
+    :param bounds: tuple, linear boundaries for each dimension, assuming origin at 0
+    :type points: list or ndarray
+    :returns: each dimension's distance matrix, in same order as passed in, followed by radial distance matrix
+    """
+    cPoints = len(points)
+    if cPoints < 2:
+        raise ValueError("Distance mtx for one point is the point's dimensions. Perhaps you meant to provide more than one point to this function. Maybe you need to unpack your list/tuple.")
+    # Ensure each point has the same dimension
+    cDim = len(points[0])  # count of dimensions
+    for p in points:
+        assert len(p) == cDim
+    aPoints = np.array(points)
+    # Use an inner iteration function because it's more versatile and easier to code than appending to a list
+    def _iter():
+        for i in xrange(cDim):
+            xs = aPoints[:, i]
+            xdist = np.tile(xs, (cPoints, 1))
+            xdist = xdist - xdist.T
+            if bounds is not None:
+                try:
+                    xbound = bounds[i]
+                except IndexError:
+                    raise Exception("There aren't enough boundaries for the number of dimensions in the points. Ensure that your bounds are of the same dimension as your points.")
+                xdist[xdist > xbound / 2.0] -= xbound
+                assert not np.any(xdist > xbound/2.0)
+                xdist[xdist < -xbound / 2.0] += xbound
+                assert not np.any(xdist < -xbound/2.0)
+            yield xdist
+    linear_distances = list(_iter())
+    radial_distance = np.zeros_like(linear_distances[0])
+    for x in linear_distances:
+        radial_distance += x**2
+    radial_distance = np.sqrt(radial_distance)
+    linear_distances.append(radial_distance)  # too lazy to name a temp variable
+    return linear_distances
 
 
 class VerletIntegrator(object):
@@ -240,7 +293,14 @@ class VerletIntegrator(object):
         c_velocities = c.velocities
         c_accelerations = c.accelerations
         c_next = Container(bounds=c.bounds)
-        c_next.num_particles = c.num_particles  # KLUDGE this should be handled in Container to prevent inconsistencies
+        # KLUDGE copying attributes should be handled in Container to prevent inconsistencies
+        c_next.time = c.time + dt
+        c_next.num_particles = c.num_particles
+        try:
+            c_next.floor_particle_ixs = c.floor_particle_ixs
+            c_next.sled_particle_ixs = c.sled_particle_ixs
+        except AttributeError:
+            pass
         def _posn_iter():
             for xs, vxs, axs in zip(c.positions, c.velocities, c_accelerations):
                 yield xs + vxs*dt + 0.5*axs*dt**2
@@ -249,7 +309,10 @@ class VerletIntegrator(object):
         # Need to hold on to previous velocities
         c_next.set_positions_velocities_accelerations(
             np.array(new_posns), c_velocities)
-        c_next.apply_force()  # verify changes accelerations, calculates PE
+        try:
+            c_next.apply_force(self.sled_forcer)
+        except AttributeError:
+            c_next.apply_force()
         kes = None  # Kinetic Energy
         lVxs = []  # l=list; store vxs values
         for xs, vxs, axs, axs_prev in zip(
@@ -274,7 +337,7 @@ class VerletIntegratorTests(unittest.TestCase):
 
 
 
-class ContainerTests(unittest.TestCase):
+class DistanceMatrixTests(unittest.TestCase):
     def test_given_body_at_origin_and_body_at_111_in_3D_distance_is_euclidean_for_each_dimension(self):
         b_origin = [0,0,0]
         b_111 = [1,1,1]
@@ -285,8 +348,7 @@ class ContainerTests(unittest.TestCase):
         e_y = np.copy(e_x)
         e_z = np.copy(e_x)
         e_r = np.copy(e_x)*math.sqrt(3)  # sqrt of squares for radial dist
-        f = Container(bounds=None)
-        a_x, a_y, a_z, a_r = f._get_distance_matrices(b_origin, b_111)
+        a_x, a_y, a_z, a_r = get_distance_matrices([b_origin, b_111])
         for e,a, in ((e_x, a_x), (e_y, a_y), (e_z, a_z)):
             self.assertTrue(np.all(np.equal(e, a)))
 
@@ -302,8 +364,7 @@ class ContainerTests(unittest.TestCase):
             [0, 1, 2],
             [-1, 0, 1],
             [-2, -1, 0]])
-        f = Container(bounds=None)
-        ax, ay, ar = f._get_distance_matrices(p1, p2, p3)
+        ax, ay, ar = get_distance_matrices([p1, p2, p3])
         for e,a, in ((ex, ax), (ey, ay)):
             self.assertTrue(np.all(np.equal(e, a)))
 
@@ -312,20 +373,19 @@ class ContainerTests(unittest.TestCase):
             [0, 1],
             [-1, 0]])
         ey = np.copy(ex)
-        f = Container(bounds=(2, 2))
-        ax, ay, a_r = f._get_distance_matrices([0,0], [3,1])
+        ax, ay, a_r = get_distance_matrices([[0,0], [3,1]], bounds=(2, 2))
         for e,a, in ((ex, ax), (ey, ay)):
             self.assertTrue(np.all(np.equal(e, a)))
 
     def test_two_points_near_boundaries_so_distance_wraps_around(self):
-        f = Container(bounds=(1,))
         expected = np.array([
             [0, -0.2],
             [0.2, 0]])
-        actual, a_r = f._get_distance_matrices([0.1], [0.9])
+        actual, a_r = get_distance_matrices([[0.1], [0.9]], bounds=(1,))
         for e,a in zip(expected.flat, actual.flat):
             self.assertAlmostEqual(e, a)
 
+class ContainerTests(unittest.TestCase):
     #NOTE: A 'p' preceding a number in a test method name means ., e.g. 0p1 = 0.1
     def test_point_at_1p1_and_bounds_at_1_wraps_to_point_at_0p1(self):
         c = Container(bounds=(1,))

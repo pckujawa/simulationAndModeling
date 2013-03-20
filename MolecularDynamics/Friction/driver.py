@@ -20,20 +20,21 @@ from patku_sim.libs import Struct
 also_run_backwards = False
 show_animation = True
 save_animation = False
-particle_radius = 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
+particle_radius = 1 # 2**(1.0/6)  # a.k.a. 'a'; actually, the point at which the Lenn-Jones force is stable between particles
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
 sim_name = 'friction'
 xlim, ylim = (0, 20), (-1, 5) # (0, 50), (-5, 5*particle_radius)
 figsize = (10, 4)
 sled_conditions = (5, 10)
+spring_const = 10
 num_frames_to_bootstrap = 100
 
-
+last_particle_position = None
 def create(cnt_sled_particles, cnt_floor_particles=100):
     """
     """
-    global particle_radius
+    global particle_radius, last_particle_position
     c = Container()
     a = particle_radius
     # Make floor with particles spaced 'a' apart
@@ -44,21 +45,23 @@ def create(cnt_sled_particles, cnt_floor_particles=100):
     # Make sled with particles in equilateral triangle of side length '2a' with base of two particles placed 'a' above floor starting at a/2
     top = Struct(x = 3.0*a/2, y = a * (math.sqrt(3) + 1))
     bottom = Struct(x = a/2.0, y = a)
-    sled_ixs = range(cnt_sled_particles)
-    for i in sled_ixs:
+    for i in xrange(cnt_sled_particles):
         if i % 2 == 1:
             side = top
         else:
             side = bottom
-        c.add_particle([side.x, side.y])
+        last_particle_position = [side.x, side.y]  # will be true when loop exits
+        c.add_particle(last_particle_position)
         side.x += 2*a
-    c.sled_particle_ixs = sled_ixs
+    c.sled_particle_ixs = np.array(range(cnt_sled_particles)) + cnt_floor_particles
     # Connect sled particles like a trianglular truss
+
     return c
 
 init_container = create(*sled_conditions)
 containers = [init_container]
 integrator = VerletIntegrator()
+integrator.sled_forcer = moldyn.SledForcer(2*particle_radius, u=last_particle_position, k=spring_const)
 
 # Animate orbit
 # Code courtesy of George Lesica
