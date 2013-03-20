@@ -27,7 +27,9 @@ sim_name = 'friction'
 xlim, ylim = (0, 20), (-1, 5) # (0, 50), (-5, 5*particle_radius)
 figsize = (10, 4)
 sled_conditions = (5, 10)  # sled, floor
-spring_const = 10
+spring_const = 10.0
+pulling_force_multiplier = 50.0
+drag_force_multiplier = 1.0
 num_frames_to_bootstrap = 100
 
 last_particle_position = None
@@ -61,7 +63,10 @@ def create(cnt_sled_particles, cnt_floor_particles=100):
 init_container = create(*sled_conditions)
 containers = [init_container]
 integrator = VerletIntegrator()
-integrator.sled_forcer = moldyn.SledForcer(2*particle_radius, u=last_particle_position, k=spring_const)
+sled_forcer = moldyn.SledForcer(2*particle_radius, u=last_particle_position, k=spring_const)
+sled_forcer.pulling_force_multiplier = pulling_force_multiplier
+sled_forcer.drag_force_multiplier = drag_force_multiplier
+integrator.sled_forcer = sled_forcer
 
 # Animate
 # Code courtesy of George Lesica
@@ -81,6 +86,8 @@ for i,posn in enumerate(posns):
     e = moldyn.get_nice_circle(posn[0], posn[1], 0.5*particle_radius)
     circles.append(ax.add_patch(e))
 time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
+pulling_force_text = ax.text(0.5, 0.90, '', transform=ax.transAxes)
+drag_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
 
 num_forward_frames = 0
 # Bootstrap some frames
@@ -93,9 +100,11 @@ while num_forward_frames < num_frames_to_bootstrap:
 def init():
     """initialize animation"""
     time_text.set_text('')
+    pulling_force_text.set_text('')
+    drag_force_text.set_text('')
     for c in circles:
         c.center = (-1, -1)  # hide (hopefully) off-screen
-    return circles + [time_text]
+    return circles + [time_text, pulling_force_text, drag_force_text]
 
 def next_frame(ix_frame):
     global num_forward_frames
@@ -109,12 +118,14 @@ def next_frame(ix_frame):
     c = containers[ix_frame]
     posns = c.positions
     time_text.set_text('time = %.1f' % c.time)
+    pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
+    drag_force_text.set_text('Fd = ' + str(c.drag_accelerations))
     facecolor = 'green'
     # TODO paint floor black, sled green, etc
     for i,circle in zip(xrange(init_container.num_particles), circles):
         circle.center = (posns[i][0], posns[i][1])  # x and y
         circle.set_facecolor(facecolor)
-    return circles + [time_text]
+    return circles + [time_text, pulling_force_text, drag_force_text]
 
 anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, init_func=init)
 if show_animation:

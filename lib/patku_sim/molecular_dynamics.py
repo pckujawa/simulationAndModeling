@@ -110,11 +110,11 @@ class SledForcer(object):
     def apply_force(self, positions, time, drag_velocities):
         """
         :param positions: list of lists/arrays, sled particle positions matching the convention that 0 is the bottom left and last is the bottom right
-        :returns: accelerations for each particle in the sled due to springs
+        :returns: accelerations for each particle in the sled due to springs, pulling, and dragging
+        :rtype: tuple(spring, pull, drag)
         """
         vx, vy = drag_velocities
         dms = get_distance_matrices(positions)
-        spring_accels = np.zeros_like(positions)
         dr = dms[-1]
         force_spring = self.k * (dr - self.spring_eq_dist)  # NOTE: *Not* negative, as in Jesse's code!
         # Each sled particle is only connected to the particles within two indices of itself, so eliminate others (and self-effects)
@@ -130,15 +130,22 @@ class SledForcer(object):
         no_spring_connections = spring_connections != 1
         force_spring[no_spring_connections] = 0
         # Finally, find the directional accelerations
+        spring_accels = np.zeros_like(positions)
+        dragging_accels = np.zeros_like(positions)  # only use the first slot
+        pulling_accels = np.zeros_like(positions)  # only use the last slot
         dr += np.eye(*dr.shape)  # 'hide' zeros on diagonal from denominator
+        if time > 0.3:
+            pass
         for ix_dim, dx in enumerate(dms[:-1]):  # skip dr
-            directional_accels = dx/dr * force_spring
+            x_hat = dx/dr  # not exactly x^, but similar
+            directional_accels = x_hat * force_spring
             spring_accels[:,ix_dim] = np.sum(directional_accels, axis=1)  # one accel per particle per dimension
-        #TODO
-        force_dragging = -10 * (vx + vy)
-        #TODO
-        force_pulling = self.k * (0.1*time - self.u)  # n-dimensional
-        return spring_accels
+            dragging_accels[0,ix_dim] = drag_velocities[ix_dim]
+            displacement = positions[-1][ix_dim] - self.u[ix_dim]
+            pulling_accels[-1,ix_dim] = (0.1*time - displacement)
+        dragging_accels *= -self.drag_force_multiplier
+        pulling_accels *= self.pulling_force_multiplier #self.k
+        return spring_accels, pulling_accels, dragging_accels
 
 
 class Container(object):
@@ -209,11 +216,15 @@ class Container(object):
             sled_posns = self._positions[self.sled_particle_ixs[0]:]
             assert self.sled_particle_ixs[-1] == self.num_particles-1
             drag_velocities = self._velocities[-1]  # last particle
-            sled_accelerations = sled_forcer.apply_force(sled_posns, self.time, drag_velocities)
-            assert len(sled_accelerations) == len(self.sled_particle_ixs)
+            spring, pull, drag = sled_forcer.apply_force(sled_posns, self.time, drag_velocities)
+            self.spring_accelerations = spring
+            self.pull_accelerations = pull[-1]
+            self.drag_accelerations = drag[0]
+            sled_accelerations = spring + pull + drag
             accelerations[self.sled_particle_ixs] += sled_accelerations
             # If we have a floor, keep it still
             accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
+##            assert np.all(self.velocities[self.floor_particle_ixs] == 0)
         except AttributeError:
             pass
         self._accelerations = accelerations.tolist()
