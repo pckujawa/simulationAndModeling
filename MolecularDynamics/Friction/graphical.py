@@ -34,10 +34,11 @@ def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="green", alp
 
 def animate_with_live_integration(
     containers, integrator, dt, xlim, ylim, figsize, particle_radius,
-    frame_show_modulus=1, num_frames_to_bootstrap=0, info_for_naming='', save_animation=False, show_animation=True, run_until_func=None):
+    frame_show_modulus=1, num_frames_to_bootstrap=0, info_for_naming='', save_animation=False, show_animation=True, run_until_func=None, anim_save_kwargs=None):
     """
     """
     global num_forward_frames
+    anim_save_kwargs = anim_save_kwargs or {'fps': 30}
     init_container = containers[0]
     plot_title = 'Molec Dyn Friction' + info_for_naming
 
@@ -130,11 +131,8 @@ def animate_with_live_integration(
             # If we haven't run/showed yet, we need to have the animation know how many frames to run for
             anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
         print 'beginning save of animation with frame count:',   num_total_frames
-        try:
-            anim.save('{}/anim/{}.avi'.format(working_directory, info_for_naming), fps=30, dpi=72)
-            pl.close()
-        except:  # Tk error, although it still seems to bubble up
-            pass
+        anim.save('{}/anim/{}.avi'.format(working_directory, info_for_naming), **anim_save_kwargs)
+        pl.close()
 
 
 def plot_potential_energy(containers, dt, num_total_frames):

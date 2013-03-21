@@ -78,7 +78,12 @@ sled_forcer.allow_negative_pull_force = allow_negative_pull_force
 sled_forcer.damp_force_multiplier = damp_force_multiplier
 integrator.sled_forcer = sled_forcer
 
-graphical.animate_with_live_integration(containers, integrator, dt, xlim, ylim, figsize, particle_radius, frame_show_modulus, num_frames_to_bootstrap, info_for_naming, save_animation, show_animation, run_func)
+nice_image_codecs = ['libx264']  # keep everything sharp and aren't slow
+fast_codecs = []
+bad_codecs = ['v210', 'rawvideo', '']
+anim_save_kwargs = {'fps': 30, 'codec': nice_image_codecs[0]}
+graphical.animate_with_live_integration(containers, integrator, dt, xlim, ylim, figsize, particle_radius, frame_show_modulus, num_frames_to_bootstrap, info_for_naming, save_animation, show_animation, run_func,
+anim_save_kwargs = anim_save_kwargs)
 
 times = []
 pulling_forces = []  # x and y
