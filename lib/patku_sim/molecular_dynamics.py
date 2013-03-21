@@ -143,9 +143,6 @@ class SledForcer(object):
             if ix_dim == 0:  # only horizontal pulling
                 pulling_accels[-1, ix_dim] = (0.1*time - displacement[ix_dim])  # 0.1 is too weak; takes forever to pull
         damping_as *= -self.damp_force_multiplier
-        print time
-        print damping_as[0]
-        print '===='
         if not self.allow_negative_pull_force:
             pulling_accels[pulling_accels < 0] = 0  # no negative pulling
         pulling_accels *= self.pulling_force_multiplier
@@ -228,9 +225,6 @@ class Container(object):
             self.damp_accelerations = damp[0]
             sled_accelerations = spring + pull + damp
             accelerations[self.sled_particle_ixs] += sled_accelerations
-##            print 'a=', damp[0], spring[0]
-##            print 'a_t=', sled_accelerations[0]
-##            print 'a_damp=', accelerations[ix_damper]
             # If we have a floor, keep it still
             accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
 ##            assert np.all(self.velocities[self.floor_particle_ixs] == 0)
