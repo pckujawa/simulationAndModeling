@@ -140,12 +140,12 @@ class SledForcer(object):
             directional_accels = x_hat * force_spring
             spring_accels[:, ix_dim] = np.sum(directional_accels, axis=1)  # one accel per particle per dimension
             damping_as[0, ix_dim] = damping_vs[ix_dim]
-            if ix_dim == 0:  # only horizontal pulling
-                pulling_accels[-1, ix_dim] = (0.1*time - displacement[ix_dim])  # 0.1 is too weak; takes forever to pull
+            if ix_dim == 0:  # only horizontal pulling allowed
+                pulling_accels[-1, ix_dim] = (self.pulling_force_v*time - displacement[ix_dim])
         damping_as *= -self.damp_force_multiplier
         if not self.allow_negative_pull_force:
-            pulling_accels[pulling_accels < 0] = 0  # no negative pulling
-        pulling_accels *= self.pulling_force_multiplier
+            pulling_accels[pulling_accels < 0] = 0
+        pulling_accels *= self.pulling_force_k
         return spring_accels, pulling_accels, damping_as
 
 
@@ -159,6 +159,29 @@ class Container(object):
         self.potential_energy = None
         self.num_particles = 0
         self.time = 0  # point in time
+
+    def apply_force(self, sled_forcer=None):
+        distance_matrices = self.get_distance_matrices()
+        accelerations, pe = lennardJonesForce(distance_matrices)
+        self.potential_energy = pe
+        try:
+            # If we have a sled, apply spring forces
+            ix_damper = self.sled_particle_ixs[0]
+            ix_puller = self.sled_particle_ixs[-1]
+            sled_posns = self._positions[ix_damper:]
+            assert ix_puller == self.num_particles-1
+            damping_vs = self._velocities[ix_damper]  # first sled particle
+            spring, pull, damp = sled_forcer.apply_force(sled_posns, self.time, damping_vs)
+            self.spring_accelerations = spring
+            self.pull_accelerations = pull[-1]  # one particle, but all dims
+            self.damp_accelerations = damp[0]  # same
+            sled_accelerations = spring + pull + damp
+            accelerations[self.sled_particle_ixs] += sled_accelerations
+            # If we have a floor, keep it still
+            accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
+        except AttributeError:
+            pass
+        self._accelerations = accelerations.tolist()
 
     def add_particle(self, position, velocity=None, acceleration=None):
         """Add one particle of n dimensions, *unbounded*.
@@ -206,30 +229,6 @@ class Container(object):
         self.set_velocities(velocities)
         if accelerations is None:
             accelerations = np.zeros_like(positions)
-        self._accelerations = accelerations.tolist()
-
-    def apply_force(self, sled_forcer=None):
-        distance_matrices = self.get_distance_matrices()
-        accelerations, pe = lennardJonesForce(distance_matrices)
-        self.potential_energy = pe
-        try:
-            # If we have a sled, apply spring forces
-            ix_damper = self.sled_particle_ixs[0]
-            ix_puller = self.sled_particle_ixs[-1]
-            sled_posns = self._positions[ix_damper:]
-            assert ix_puller == self.num_particles-1
-            damping_vs = self._velocities[ix_damper]  # first sled particle
-            spring, pull, damp = sled_forcer.apply_force(sled_posns, self.time, damping_vs)
-            self.spring_accelerations = spring
-            self.pull_accelerations = pull[-1]
-            self.damp_accelerations = damp[0]
-            sled_accelerations = spring + pull + damp
-            accelerations[self.sled_particle_ixs] += sled_accelerations
-            # If we have a floor, keep it still
-            accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
-##            assert np.all(self.velocities[self.floor_particle_ixs] == 0)
-        except AttributeError:
-            pass
         self._accelerations = accelerations.tolist()
 
     def bound(self, points):
