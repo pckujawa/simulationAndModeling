@@ -40,7 +40,8 @@ def add_square_lattice(container, dimension, dx, dy, random_particle_ix=None, ra
         for j in xrange(dimension):
             vx, vy = 0, 0
             if i*8 + j == random_particle_ix:
-                vy = random_velocity or 1  # TODO make random value
+                if random_velocity is not None:
+                    vy = random_velocity
             x = dx * (i + 0.5)
             y = dy * (j + 0.5)
             container.add_particle([x, y], [vx, vy])  # , mass)
