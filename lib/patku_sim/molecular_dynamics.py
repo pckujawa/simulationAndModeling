@@ -146,7 +146,11 @@ class SledForcer(object):
         if not self.allow_negative_pull_force:
             pulling_accels[pulling_accels < 0] = 0
         pulling_accels *= self.pulling_force_k
-        return spring_accels, pulling_accels, damping_as
+        # Normal force
+        num_particles = len(positions)
+        normal_as = np.zeros_like(positions)
+        normal_as[:, 1] = -self.normal_force/num_particles  # only y component
+        return spring_accels, pulling_accels, damping_as, normal_as
 
 
 class Container(object):
@@ -171,11 +175,11 @@ class Container(object):
             sled_posns = self._positions[ix_damper:]
             assert ix_puller == self.num_particles-1
             damping_vs = self._velocities[ix_damper]  # first sled particle
-            spring, pull, damp = sled_forcer.apply_force(sled_posns, self.time, damping_vs)
+            spring, pull, damp, normal = sled_forcer.apply_force(sled_posns, self.time, damping_vs)
             self.spring_accelerations = spring
             self.pull_accelerations = pull[-1]  # one particle, but all dims
             self.damp_accelerations = damp[0]  # same
-            sled_accelerations = spring + pull + damp
+            sled_accelerations = spring + pull + damp + normal
             accelerations[self.sled_particle_ixs] += sled_accelerations
             # If we have a floor, keep it still
             accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions

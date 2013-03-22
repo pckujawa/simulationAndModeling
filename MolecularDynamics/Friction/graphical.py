@@ -40,7 +40,7 @@ def animate_with_live_integration(
     global num_forward_frames
     anim_save_kwargs = anim_save_kwargs or {'fps': 30}
     init_container = containers[0]
-    plot_title = 'Molec Dyn Friction' + info_for_naming
+    plot_title = 'Friction' + info_for_naming
 
     also_run_backwards = False
     num_forward_frames = len(containers)
@@ -84,8 +84,8 @@ def animate_with_live_integration(
 
     def next_frame(ix_frame):
         global num_forward_frames
-        if ix_frame % 100 == 1:
-            print 'frame', ix_frame
+##        if ix_frame % 100 == 1:
+##            print 'frame', ix_frame
         # Do only the integration necessary to get to the requested frame
         container_ix = ix_frame*frame_show_modulus
         while num_forward_frames <= ix_frame:
@@ -132,7 +132,10 @@ def animate_with_live_integration(
             anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
         print 'beginning save of animation with frame count:',   num_total_frames
         anim.save('{}/anim/{}.avi'.format(working_directory, info_for_naming), **anim_save_kwargs)
-        pl.close()
+        try:
+            pl.close()
+        except:
+            pass
 
 
 def plot_potential_energy(containers, dt, num_total_frames):
@@ -157,6 +160,7 @@ def plot_pulling_force(times, pulling_forces, info_for_naming=''):
     fx_max_ix = np.argmax(pulling_forces, axis=0)[0]
     fx_max = pulling_forces[fx_max_ix][0]
     time_of_fx_max = times[fx_max_ix]
+    print 'Fx_max of {} at t={}'.format(fx_max, time_of_fx_max)
     defaults = {'markersize':1, 'linewidth':0.1}
     for ix_dim, name in zip(range(len(pulling_forces[0])), ['Fx']):#, 'Fy', 'Fz']):
         pl.plot(times, pulling_forces[:, ix_dim], 'o-', label=name, **defaults)
