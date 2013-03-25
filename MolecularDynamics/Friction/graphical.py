@@ -200,11 +200,11 @@ def plot_pulling_force(times, pulling_forces, normal_force, info_for_naming='', 
         pl.close()
 
 
-def plot_all_pulling_forces(data_frame, filename='all', show=True):
+def plot_all_pulling_forces(lstats, filename='all', show=True):
     defaults = {'markersize':1, 'linewidth':1, 'alpha': 0.5}
     colors = {1: 'purple', 9: 'black', 13: 'red', 17: 'blue'}  # by sled size
     fig = pl.figure(figsize=(14,10))
-    for stats in data_frame:
+    for stats in lstats:
         label = '{} {:3d} {:.1f}'.format(
             stats.sled_size, stats.W, stats.Fp_max)
         pulling_forces = stats.pulling_forces
@@ -252,12 +252,14 @@ def plot_friction_slope(data_frame, filename='friction slope', show=True):
         pl.plot(xfit, yfit,
             '-', label=label, color=color, **defaults)
     xmin, xmax = pl.xlim()
-    pl.xlim((xmin*1.05, xmax*1.05))  # xmin is negative
+    pl.xlim((xmin-1, xmax+1))
     pl.ylabel('$max(Fp)$')
     pl.xlabel('W')
     pl.title('Friction force (max pulling force vs normal force)')
-    pl.legend(ncol=1,
-        fontsize=14, loc='upper left', frameon=False)
+    ax = pl.gca()
+    handles, labels = ax.get_legend_handles_labels()
+    pl.legend(handles[::-1], labels[::-1], # reverse order
+        ncol=1, fontsize=14, loc='upper left', frameon=False)
     pl.savefig('{}/plots/svg/Fp {}.svg'.format(working_directory, filename))
     pl.savefig('{}/plots/Fp {}.png'.format(working_directory, filename))
     if show:
