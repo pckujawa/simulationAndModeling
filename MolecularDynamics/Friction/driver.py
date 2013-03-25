@@ -31,13 +31,13 @@ a = 2*particle_radius
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
 xlim, ylim = (0, 30), (-1, 5)
-figsize = (10, 4)
+figsize = (10, 4)  # for animation only
 sled_k = 500.0
 pulling_force_k = 5.0
 allow_negative_pull_force = True
 damp_force_multiplier = 10.0
 num_frames_to_bootstrap = 100
-lstats = []
+lstats = []  # list of stats
 
 
 class RunFunc():
@@ -137,8 +137,6 @@ class SimStats(object):
 for num_sled in [1, 9, 13, 17]:
     for pull_v in [0.1]:# np.linspace(0.05, 0.50, 10):
         for W in xrange(-20, 41, 5):  # include 40
-##            print pull_v
-##            time_of_break = None  # need to reset each time. stupid globals
             run_timed = lambda: run(W, (num_sled, 25), pull_v)
             num_times = 1
             timer = timeit.Timer(run_timed)

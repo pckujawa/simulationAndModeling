@@ -234,7 +234,7 @@ def plot_all_pulling_forces(data_frame, filename='all', show=True):
 
 
 def plot_friction_slope(data_frame, filename='friction slope', show=True):
-    defaults = {'markersize':5, 'linewidth':1, 'alpha': 1}
+    defaults = {'markersize':5, 'linewidth':1, 'alpha': 0.5}
     colors = {1: 'purple', 9: 'black', 13: 'red', 17: 'blue'}  # by sled size
     fig = pl.figure(figsize=(8,6))
     for sled_size in np.unique(data_frame['sled_size']):
@@ -245,9 +245,14 @@ def plot_friction_slope(data_frame, filename='friction slope', show=True):
         area = (sled_size + 1) / 2  # just the floor of the sled
         c = yint / area  # constant multiplier
         label = 'Sled of {:.0f}: $f_s = {:.3f}W + {:.3f}A$'.format(sled_size, slope, c)
-        pl.plot(x, y,
-            'o-', label=label, color=colors[sled_size],
-            **defaults)
+        color = colors[sled_size]
+        pl.plot(x, y, 'o', color=color, **defaults)
+        xfit = np.array([min(x), max(x)])
+        yfit = slope * xfit + yint
+        pl.plot(xfit, yfit,
+            '-', label=label, color=color, **defaults)
+    xmin, xmax = pl.xlim()
+    pl.xlim((xmin*1.05, xmax*1.05))  # xmin is negative
     pl.ylabel('$max(Fp)$')
     pl.xlabel('W')
     pl.title('Friction force (max pulling force vs normal force)')
