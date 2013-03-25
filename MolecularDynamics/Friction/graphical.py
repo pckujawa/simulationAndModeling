@@ -264,4 +264,4 @@ def plot_friction_slope(data_frame, filename='friction slope', show=True):
         pl.show()
     else:
         pl.close()
-plot_friction_slope(data_frame)
+##plot_friction_slope(data_frame)
