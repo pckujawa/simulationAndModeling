@@ -115,21 +115,22 @@ class SledForcer(object):
         :rtype: tuple(spring, pull, damp)
         """
         vx, vy = damping_vs
-        dms = get_distance_matrices(positions)
+        size = len(positions)
+        dms = get_distance_matrices(positions, one_point_ok=True)
         dr = dms[-1]
         force_spring = self.k * (dr - self.spring_eq_dist)  # NOTE: *Not* negative, as in Jesse's code!
         # Each sled particle is only connected to the particles within two indices of itself, so eliminate others (and self-effects)
         #  There's probably a slicker way to create a matrix for the connections...
-        size = len(positions)
-        diag1 = np.ones((size-1,))
-        diag2 = np.ones((size-2,))
-        spring_connections = \
-            np.diagflat(diag1, 1) + \
-            np.diagflat(diag1, -1) + \
-            np.diagflat(diag2, 2) + \
-            np.diagflat(diag2, -2)
-        no_spring_connections = spring_connections != 1
-        force_spring[no_spring_connections] = 0
+        if size > 1:
+            diag1 = np.ones((size-1,))
+            diag2 = np.ones((size-2,))
+            spring_connections = \
+                np.diagflat(diag1, 1) + \
+                np.diagflat(diag1, -1) + \
+                np.diagflat(diag2, 2) + \
+                np.diagflat(diag2, -2)
+            no_spring_connections = spring_connections != 1
+            force_spring[no_spring_connections] = 0
         # Finally, find the directional accelerations
         spring_accels = np.zeros_like(positions)
         damping_as = np.zeros_like(positions)  # only use the first slot
@@ -268,14 +269,14 @@ class Container(object):
         return get_distance_matrices(self._positions, self.bounds)
 
 
-def get_distance_matrices(points, bounds=None):
+def get_distance_matrices(points, bounds=None, one_point_ok=False):
     """Calculates the distances between all points for each dimension and radially.
     :param bounds: tuple, linear boundaries for each dimension, assuming origin at 0
     :type points: list or ndarray
     :returns: each dimension's distance matrix, in same order as passed in, followed by radial distance matrix
     """
     cPoints = len(points)
-    if cPoints < 2:
+    if cPoints < 2 and not one_point_ok:
         raise ValueError("Distance mtx for one point is the point's dimensions. Perhaps you meant to provide more than one point to this function. Maybe you need to unpack your list/tuple.")
     # Ensure each point has the same dimension
     cDim = len(points[0])  # count of dimensions
