@@ -38,6 +38,7 @@ allow_negative_pull_force = True
 damp_force_multiplier = 10.0
 num_frames_to_bootstrap = 100
 lstats = []  # list of stats
+##unpickle_filepath = r'lstats 1_9_13_17 Fpv=0.1 W=-20..40by5.pickle'
 
 
 class RunFunc():
@@ -134,14 +135,18 @@ class SimStats(object):
         return '{} {}'.format(self.info_for_naming,
             {k:v for k,v in self.__dict__.iteritems() if k in keep})
 
-for num_sled in [1, 9, 13, 17]:
-    for pull_v in [0.1]:# np.linspace(0.05, 0.50, 10):
-        for W in xrange(-20, 41, 5):  # include 40
-            run_timed = lambda: run(W, (num_sled, 25), pull_v)
-            num_times = 1
-            timer = timeit.Timer(run_timed)
-            time_taken = timer.timeit(num_times)
-            print '\tfinished {} iterations in {}s'.format(num_times, time_taken)
+try:
+    lstats = pickle.load(open(unpickle_filepath, 'rb'))
+except:
+    for num_sled in [9]:# [1, 9, 13, 17]:
+        for pull_v in [0.1]:# np.linspace(0.05, 0.50, 10):
+            for W in [0]:# xrange(0, 41, 5):  # include 40
+                run_timed = lambda: run(W, (num_sled, 25), pull_v)
+                num_times = 1
+                timer = timeit.Timer(run_timed)
+                time_taken = timer.timeit(num_times)
+                print '\tfinished {} iterations in {}s'.format(num_times, time_taken)
+    pickle.dump(lstats, open('lstats.pickle', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
 
 def get_csv_iter(lstats):
     csv_cols = ['sled_size', 'W', 'Fp_max', 'Fp_max_time', 'Fpv']
@@ -154,5 +159,6 @@ print '\n'.join(get_csv_iter(lstats))
 data_frame = np.genfromtxt(get_csv_iter(lstats), delimiter=',', names=True)
 ##dm = pandas.DataMatrix.fromRecords(data_frame)
 
-graphical.plot_friction_slope(data_frame)
+if len(lstats) > 1:
+    graphical.plot_friction_slope(data_frame)
 graphical.plot_all_pulling_forces(lstats)
