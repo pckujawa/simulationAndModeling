@@ -157,10 +157,10 @@ def plot_potential_energy(containers, dt, num_total_frames):
     pl.show()
 
 
-def get_pulling_force_max_and_meta(times, pulling_forces, drop_magnitude=0.5):
+def get_pulling_force_max_and_meta(times, pulling_forces, normal_force=0):
     """
-    :param drop_magnitude: amount of a decrease that indicates we've passed the 'max' and are on the decline. Necessary for small sleds with negative W's.
     """
+    drop_magnitude = 0.01 * (normal_force + 90)  # roughly empirical. Want at most 0.9 at W=-20 but > 1 at W=40, based off plots
     fx_max = 0
     for ix, (Fp, time) in enumerate( zip(pulling_forces[:, 0], times) ):
         if Fp < fx_max - drop_magnitude:  # if we get a significant drop, call that max
@@ -175,8 +175,9 @@ def get_pulling_force_max_and_meta(times, pulling_forces, drop_magnitude=0.5):
     print 'Fx_max of {} at t={}'.format(fx_max, time_of_fx_max)
     return fx_max, time_of_fx_max, fx_max_ix
 
-def plot_pulling_force(times, pulling_forces, info_for_naming=''):
-    fx_max, time_of_fx_max, fx_max_ix = get_pulling_force_max_and_meta(times, pulling_forces)
+def plot_pulling_force(times, pulling_forces, normal_force, info_for_naming='', show=True):
+    pulling_forces = np.array(pulling_forces)  # may be redundant
+    fx_max, time_of_fx_max, fx_max_ix = get_pulling_force_max_and_meta(times, pulling_forces, normal_force=normal_force)
     defaults = {'markersize':1, 'linewidth':0.1}
     fig = pl.figure()
     for ix_dim, name in zip(range(len(pulling_forces[0])), ['Fx']):#, 'Fy', 'Fz']):
@@ -193,5 +194,69 @@ def plot_pulling_force(times, pulling_forces, info_for_naming=''):
     pl.annotate(info_for_naming, xy=(0.01, 0.03), xycoords='axes fraction', fontsize=12)
     pl.savefig('{}/plots/svg/Fp {}.svg'.format(working_directory, info_for_naming))
     pl.savefig('{}/plots/Fp {}.png'.format(working_directory, info_for_naming))
-    pl.show()
+    if show:
+        pl.show()
+    else:
+        pl.close()
 
+
+def plot_all_pulling_forces(data_frame, filename='all', show=True):
+    defaults = {'markersize':1, 'linewidth':1, 'alpha': 0.5}
+    colors = {1: 'purple', 9: 'black', 13: 'red', 17: 'blue'}  # by sled size
+    fig = pl.figure(figsize=(14,10))
+    for stats in data_frame:
+        label = '{} {:3d} {:.1f}'.format(
+            stats.sled_size, stats.W, stats.Fp_max)
+        pulling_forces = stats.pulling_forces
+        times = stats.times
+        for ix_dim, dim in zip(range(len(pulling_forces[0])), ['Fx']):#, 'Fy', 'Fz']):
+            pl.plot(times, pulling_forces[:, ix_dim], '-',
+                label=label, color=colors[stats.sled_size],
+                **defaults)
+    pl.ylabel('Fp')
+    pl.xlabel('Time')
+    pl.title('Pulling force vs time, varying sled size and normal force')
+##    pl.annotate('{}'.format(colors), xy=(0.1, 0.9),
+##        xycoords='axes fraction', fontsize=12)
+##    pl.xlim(xmin=-10)  # make room for legend
+##    ax = pl.gca()
+##    handles, labels = ax.get_legend_handles_labels()
+##    pl.legend(handles, labels)
+    pl.legend(ncol=3, title='Sled size, normal force, max Fp',
+        fontsize=10, loc='upper left', frameon=False)
+##    pl.savefig('{}/plots/svg/Fp {}.svg'.format(working_directory, filename))  # SVG is ~30MB and takes a long time
+    pl.savefig('{}/plots/Fp {}.png'.format(working_directory, filename))
+    if show:
+        pl.show()
+    else:
+        pl.close()
+##plot_all_pulling_forces(data_table)
+
+
+def plot_friction_slope(data_frame, filename='friction slope', show=True):
+    defaults = {'markersize':5, 'linewidth':1, 'alpha': 1}
+    colors = {1: 'purple', 9: 'black', 13: 'red', 17: 'blue'}  # by sled size
+    fig = pl.figure(figsize=(8,6))
+    for sled_size in np.unique(data_frame['sled_size']):
+        aggregate = data_frame[data_frame['sled_size'] == sled_size]
+        x = aggregate['W']
+        y = aggregate['Fp_max']
+        slope, yint = np.polyfit(x, y, deg=1)
+        area = (sled_size + 1) / 2  # just the floor of the sled
+        c = yint / area  # constant multiplier
+        label = 'Sled of {:.0f}: $f_s = {:.3f}W + {:.3f}A$'.format(sled_size, slope, c)
+        pl.plot(x, y,
+            'o-', label=label, color=colors[sled_size],
+            **defaults)
+    pl.ylabel('$max(Fp)$')
+    pl.xlabel('W')
+    pl.title('Friction force (max pulling force vs normal force)')
+    pl.legend(ncol=1,
+        fontsize=14, loc='upper left', frameon=False)
+    pl.savefig('{}/plots/svg/Fp {}.svg'.format(working_directory, filename))
+    pl.savefig('{}/plots/Fp {}.png'.format(working_directory, filename))
+    if show:
+        pl.show()
+    else:
+        pl.close()
+plot_friction_slope(data_frame)

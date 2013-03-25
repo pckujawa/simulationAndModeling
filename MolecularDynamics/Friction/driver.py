@@ -37,7 +37,7 @@ pulling_force_k = 5.0
 allow_negative_pull_force = True
 damp_force_multiplier = 10.0
 num_frames_to_bootstrap = 100
-data_table = []
+lstats = []
 
 
 class RunFunc():
@@ -82,7 +82,7 @@ def run(
     sled_conditions = (9, 25),  # num particles in sled, floor
     pulling_force_v = 0.1
     ):
-    global containers, data_table
+    global containers, lstats
     info_for_naming = '{} W={:.0f} Fpv={:.2f} Fpk={:.1f} dt={:.2f} k={:.1f} Fdm={:.1f}'.format(sled_conditions, normal_force, pulling_force_v, pulling_force_k, dt, sled_k, damp_force_multiplier)
 
     print 'running with', info_for_naming
@@ -109,8 +109,8 @@ def run(
         dt = dt,
         sled_k = sled_k,
         Fdm = damp_force_multiplier)
-    data_table.append(stats)
-##    graphical.plot_pulling_force(times, pulling_forces, info_for_naming)
+    lstats.append(stats)
+    graphical.plot_pulling_force(stats.times, stats.pulling_forces, normal_force=stats.W, info_for_naming=info_for_naming, show=False)
 
 
 class SimStats(object):
@@ -124,7 +124,8 @@ class SimStats(object):
             pulling_forces.append(c.pull_accelerations)
         self.times = np.array(times)
         self.pulling_forces = np.array(pulling_forces)
-        pfm = graphical.get_pulling_force_max_and_meta(self.times, self.pulling_forces)
+        assert 'W' in attributes
+        pfm = graphical.get_pulling_force_max_and_meta(self.times, self.pulling_forces, normal_force=self.W)
         self.Fp_max, self.Fp_max_time, ix = pfm
     def __str__(self):
         return self.info_for_naming
@@ -133,13 +134,27 @@ class SimStats(object):
         return '{} {}'.format(self.info_for_naming,
             {k:v for k,v in self.__dict__.iteritems() if k in keep})
 
-for num_sled in [9]:#, 13, 17]:
-    for pull_v in [0.1]:#np.linspace(0.05, 0.50, 10):
-        for W in [-20, -15, -10]:#xrange(-20, 41, 5):  # include 40
+for num_sled in [1, 9, 13, 17]:
+    for pull_v in [0.1]:# np.linspace(0.05, 0.50, 10):
+        for W in xrange(-20, 41, 5):  # include 40
 ##            print pull_v
 ##            time_of_break = None  # need to reset each time. stupid globals
             run_timed = lambda: run(W, (num_sled, 25), pull_v)
             num_times = 1
             timer = timeit.Timer(run_timed)
             time_taken = timer.timeit(num_times)
-            print 'finished {} iterations in {}s'.format(num_times, time_taken)
+            print '\tfinished {} iterations in {}s'.format(num_times, time_taken)
+
+def get_csv_iter(lstats):
+    csv_cols = ['sled_size', 'W', 'Fp_max', 'Fp_max_time', 'Fpv']
+    yield ','.join(csv_cols)
+    for s in lstats:
+        yield ','.join([str(getattr(s, col)) for col in csv_cols])
+
+print '\n'.join(get_csv_iter(lstats))
+
+data_frame = np.genfromtxt(get_csv_iter(lstats), delimiter=',', names=True)
+##dm = pandas.DataMatrix.fromRecords(data_frame)
+
+graphical.plot_friction_slope(data_frame)
+graphical.plot_all_pulling_forces(lstats)
