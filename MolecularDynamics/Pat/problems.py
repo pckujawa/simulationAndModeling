@@ -17,7 +17,7 @@ import math
 from patku_sim import Container, moldyn
 
 # _extra_params = None
-particle_radius = 2**(1.0/6)
+particle_radius = 0.5*2**(1.0/6)
 
 
 def line_sim(container, special_particles, **extra_params):
@@ -102,14 +102,14 @@ def problem_1(container, special_particles, **extra_params):
 
 
 def problem_3(container, special_particles, **extra_params):
-    """Initial positions of the particles are on the nodes of a square lattice. Choose N = 64 atoms and Lx = Ly = 9. All velocities are initially zero.
+    """Initial positions of the particles are on the nodes of a square lattice. Choose N = 64 atoms and Lx = Ly = 10*particle_radius. All velocities are initially zero.
     """
     random_velocity = extra_params.get('random_velocity', None)
     random_particle_ix = extra_params.get('random_particle_ix', None)  # TODO `or random_ix`
     if random_particle_ix is not None:
         special_particles.append(random_particle_ix)
     N = 8  # this is 8x8 = 64 particles
-    Lx = math.sqrt(math.sqrt(3)/2) * 9
+    Lx = 16*particle_radius  # math.sqrt(math.sqrt(3)/2) * 9
     Ly = Lx
     container.bounds = (Lx, Ly)
     dx = Lx / float(N)

@@ -20,15 +20,16 @@ from problems import get_container_for
 also_run_backwards = False
 show_animation = True
 save_animation = False
-particle_radius = 2**(1.0/6)
-num_forward_frames = 5000
+particle_radius = 0.5*2**(1.0/6)
+num_forward_frames = 2000
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
-sim_name = ['symmetry', 'problem_3', 'problem_1', 'line'][0]
-extra_params = {'Lx': 10,
-    'random_velocity': 0, 'random_particle_ix': 0,
-    'lattice': ['triangle', 'square'][0],
-    'symmetry_number': 'six'}
+sim_name = ['symmetry', 'line', 'problem_1', 'problem_3'][-1]
+extra_params = {
+    'symmetry_number': 'eight',
+    'Lx': 10,  # only for line
+    'random_velocity': 0, 'random_particle_ix': None,
+    'lattice': ['triangle', 'square'][1]}
 
 
 def squeeze(container, squeeze_factor, t):
@@ -77,7 +78,7 @@ pl.ylabel('Y Position')
 posns = init_container.positions
 circles = []
 for i,posn in enumerate(posns):
-    e = moldyn.get_nice_circle(posn[0], posn[1], 0.5*particle_radius)
+    e = moldyn.get_nice_circle(posn[0], posn[1], particle_radius)
     circles.append(ax.add_patch(e))
 
 def init():
@@ -123,5 +124,5 @@ pl.plot(times, plotted_pes, 'o-', color='black', markersize=1, linewidth=0.1)
 pl.ylabel('Potential energy per particle')
 pl.xlabel('Time')
 pl.title('PE/particle for {}'.format(sim_name))
-pl.savefig('pat_mol_dyn_{}_pe.png'.format(sim_name))
+pl.savefig('pat_mol_dyn_{}_pe.svg'.format(sim_name))
 pl.show()
