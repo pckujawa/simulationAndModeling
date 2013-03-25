@@ -54,13 +54,13 @@ def animate_with_live_integration(
 
     circles = []
     for i in xrange(init_container.num_particles):
-        e = get_nice_circle(0, 0, 0.5*particle_radius)
+        e = get_nice_circle(0, 0, particle_radius)
         circles.append(ax.add_patch(e))
     time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
     pulling_force_text = ax.text(0.5, 0.90, '', transform=ax.transAxes)
     damp_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
 
-    # Bootstrap some frames
+    # Bootstrap some frames using user-suppliend func and/or count
     if run_until_func is not None:
         while run_until_func(containers[-1]):
             containers.append(integrator.step(containers[-1], dt))
@@ -113,6 +113,8 @@ def animate_with_live_integration(
     anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, init_func=init, save_count=save_count)
     if show_animation:
         pl.show()
+    else:
+        pl.close()
 
     end_container = containers[-1]
 
@@ -150,18 +152,33 @@ def plot_potential_energy(containers, dt, num_total_frames):
     pl.ylabel('Potential energy per particle')
     pl.xlabel('Time')
     pl.title('PE/particle for {} frames'.format(num_forward_frames))
+    pl.savefig('{}/plots/svg/pe {}.svg'.format(working_directory, info_for_naming))
     pl.savefig('{}/plots/pe {}.png'.format(working_directory, info_for_naming))
     pl.show()
 
 
-def plot_pulling_force(times, pulling_forces, info_for_naming=''):
-    fig = pl.figure()
-    pulling_forces = np.array(pulling_forces)
-    fx_max_ix = np.argmax(pulling_forces, axis=0)[0]
-    fx_max = pulling_forces[fx_max_ix][0]
-    time_of_fx_max = times[fx_max_ix]
+def get_pulling_force_max_and_meta(times, pulling_forces, drop_magnitude=0.5):
+    """
+    :param drop_magnitude: amount of a decrease that indicates we've passed the 'max' and are on the decline. Necessary for small sleds with negative W's.
+    """
+    fx_max = 0
+    for ix, (Fp, time) in enumerate( zip(pulling_forces[:, 0], times) ):
+        if Fp < fx_max - drop_magnitude:  # if we get a significant drop, call that max
+            break
+        if Fp > fx_max:
+            fx_max = Fp
+            time_of_fx_max = time
+            fx_max_ix = ix
+##    fx_max_ix = np.argmax(pulling_forces, axis=0)[0]
+##    fx_max = pulling_forces[fx_max_ix][0]
+##    time_of_fx_max = times[fx_max_ix]
     print 'Fx_max of {} at t={}'.format(fx_max, time_of_fx_max)
+    return fx_max, time_of_fx_max, fx_max_ix
+
+def plot_pulling_force(times, pulling_forces, info_for_naming=''):
+    fx_max, time_of_fx_max, fx_max_ix = get_pulling_force_max_and_meta(times, pulling_forces)
     defaults = {'markersize':1, 'linewidth':0.1}
+    fig = pl.figure()
     for ix_dim, name in zip(range(len(pulling_forces[0])), ['Fx']):#, 'Fy', 'Fz']):
         pl.plot(times, pulling_forces[:, ix_dim], 'o-', label=name, **defaults)
     pl.ylabel('Fp')
@@ -174,6 +191,7 @@ def plot_pulling_force(times, pulling_forces, info_for_naming=''):
     # Sim info:
     pl.ylim(ymin=-2)  # make room for it
     pl.annotate(info_for_naming, xy=(0.01, 0.03), xycoords='axes fraction', fontsize=12)
+    pl.savefig('{}/plots/svg/Fp {}.svg'.format(working_directory, info_for_naming))
     pl.savefig('{}/plots/Fp {}.png'.format(working_directory, info_for_naming))
     pl.show()
 
