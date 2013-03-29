@@ -7,6 +7,7 @@ from __future__ import division
 import numpy as np
 import pylab as pl
 import math
+from scipy.spatial import KDTree
 ##import unittest
 ##import itertools
 ##from pprint import pprint, pformat
@@ -36,10 +37,27 @@ sled_k = 500.0
 pulling_force_k = 5.0
 allow_negative_pull_force = True
 damp_force_multiplier = 10.0
-num_frames_to_bootstrap = 100
+num_frames_to_bootstrap = 1
 lstats = []  # list of stats
 ##unpickle_filepath = r'lstats 1_9_13_17 Fpv=0.1 W=-20..40by5.pickle'
 
+
+class NeighborFacilitator(object):
+    def __init__(self, distance, count_till_regeneration):
+        self.d = distance
+        self.n = count_till_regeneration
+        self.hits = 0  # counter of times generate fn has been called
+    def generate_pairs_if_needed(self, posns):
+        self.hits += 1
+        if self.hits % self.n == 1:  # implicitly do initialization
+            tree = KDTree(posns)
+            self.pairs = tree.query_pairs(self.d)
+        return self.pairs
+    def generate_kdtree_if_needed(self, posns):
+        self.hits += 1
+        if self.hits % self.n == 1:  # implicitly do initialization
+            self.tree = KDTree(posns)
+        return self.tree
 
 class RunFunc():
     def __init__(self, last_particle_position):
@@ -81,10 +99,12 @@ def create(cnt_sled_particles, cnt_floor_particles=100):
 def run(
     normal_force = 0,
     sled_conditions = (9, 25),  # num particles in sled, floor
-    pulling_force_v = 0.1
+    pulling_force_v = 0.1,
+    neighbor_facilitator = None
     ):
     global containers, lstats
-    info_for_naming = '{} W={:.0f} Fpv={:.2f} Fpk={:.1f} dt={:.2f} k={:.1f} Fdm={:.1f}'.format(sled_conditions, normal_force, pulling_force_v, pulling_force_k, dt, sled_k, damp_force_multiplier)
+    lj_method = 'dm' if neighbor_facilitator is None else 'nl'  # LJ method used either distance matrix or neighbor list
+    info_for_naming = '{}-{} W={:.0f} Fpv={:.2f} Fpk={:.1f} dt={:.2f} k={:.1f} Fdm={:.1f}'.format(sled_conditions, lj_method, normal_force, pulling_force_v, pulling_force_k, dt, sled_k, damp_force_multiplier)
 
     print 'running with', info_for_naming
 
@@ -98,8 +118,10 @@ def run(
     sled_forcer.damp_force_multiplier = damp_force_multiplier
     sled_forcer.normal_force = normal_force
     integrator.sled_forcer = sled_forcer
+    integrator.neighbor_facilitator = neighbor_facilitator
 
-    graphical.animate_with_live_integration(containers, integrator, dt, xlim, ylim, figsize, particle_radius, frame_show_modulus, num_frames_to_bootstrap, info_for_naming, save_animation, show_animation, RunFunc(last_particle_position),
+    run_func = None# RunFunc(last_particle_position)
+    graphical.animate_with_live_integration(containers, integrator, dt, xlim, ylim, figsize, particle_radius, frame_show_modulus, num_frames_to_bootstrap, info_for_naming, save_animation, show_animation, run_func,
     anim_save_kwargs = anim_save_kwargs)
 
     stats = SimStats(info_for_naming, containers,
@@ -135,30 +157,36 @@ class SimStats(object):
         return '{} {}'.format(self.info_for_naming,
             {k:v for k,v in self.__dict__.iteritems() if k in keep})
 
+
 try:
     lstats = pickle.load(open(unpickle_filepath, 'rb'))
 except:
     for num_sled in [9]:# [1, 9, 13, 17]:
         for pull_v in [0.1]:# np.linspace(0.05, 0.50, 10):
             for W in [0]:# xrange(0, 41, 5):  # include 40
-                run_timed = lambda: run(W, (num_sled, 25), pull_v)
-                num_times = 1
-                timer = timeit.Timer(run_timed)
-                time_taken = timer.timeit(num_times)
-                print '\tfinished {} iterations in {}s'.format(num_times, time_taken)
-    pickle.dump(lstats, open('lstats.pickle', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)
+                for use_neighbors in [False, True]:
+                    neighbor_facilitator = NeighborFacilitator(2.5, 10) if use_neighbors else None
+                    run_timed = lambda: run(W, (num_sled, 25), pull_v, neighbor_facilitator)
+                    num_times = 1
+                    timer = timeit.Timer(run_timed)
+                    time_taken = timer.timeit(num_times)
+                    used_ns = 'with' if use_neighbors else 'without'
+                    print '\tfinished {} iterations {} neighbors in {}s'.format(num_times, used_ns, time_taken)
+##    pickle.dump(lstats, open('lstats.pickle', 'wb'), protocol=pickle.HIGHEST_PROTOCOL)  # cPickle.PicklingError: Can't pickle <class '__main__.SimStats'>: attribute lookup __main__.SimStats failed
 
-def get_csv_iter(lstats):
-    csv_cols = ['sled_size', 'W', 'Fp_max', 'Fp_max_time', 'Fpv']
-    yield ','.join(csv_cols)
-    for s in lstats:
-        yield ','.join([str(getattr(s, col)) for col in csv_cols])
+def compare_many_stats():
+    def get_csv_iter(lstats):
+        csv_cols = ['sled_size', 'W', 'Fp_max', 'Fp_max_time', 'Fpv']
+        yield ','.join(csv_cols)
+        for s in lstats:
+            yield ','.join([str(getattr(s, col)) for col in csv_cols])
 
-print '\n'.join(get_csv_iter(lstats))
+    print '\n'.join(get_csv_iter(lstats))
 
-data_frame = np.genfromtxt(get_csv_iter(lstats), delimiter=',', names=True)
-##dm = pandas.DataMatrix.fromRecords(data_frame)
+    data_frame = np.genfromtxt(get_csv_iter(lstats), delimiter=',', names=True)
+    ##dm = pandas.DataMatrix.fromRecords(data_frame)
 
-if len(lstats) > 1:
-    graphical.plot_friction_slope(data_frame)
+    if len(lstats) > 1:
+        graphical.plot_friction_slope(data_frame)
+
 graphical.plot_all_pulling_forces(lstats)

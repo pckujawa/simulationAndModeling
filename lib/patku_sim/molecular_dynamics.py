@@ -7,6 +7,8 @@ from __future__ import division
 ##from scipy.integrate import odeint  # for integrate.odeint
 import numpy as np
 import pylab as pl
+from scipy.spatial import KDTree
+import scipy.sparse
 import math
 import unittest
 ##import itertools
@@ -14,6 +16,12 @@ import unittest
 ##from collections import defaultdict, namedtuple
 
 ##from libs import Struct
+
+
+def get_pairs_within_distance(container, dist):
+    posns = container.positions
+    kd = scipy.spatial.KDTree(posns)
+    return kd.query_pairs(dist)
 
 
 # Circle code courtesy of Kevin Joyce
@@ -60,6 +68,55 @@ def add_triangle_lattice(container, dimension, dx, dy):
                 x = dx * (i + 0.75)
             container.add_particle([x, y], [0, 0])  # , mass=1
 
+# TODO Create an LJ fn that takes adj list or sets of pairs
+def lj_given_neighbors(particle_posn, neighbors_posns, bounds=None):
+##>>> lj_given_neighbors([0, 0], [ [1, 1], [-1, -1] ])
+##(array([[ 0.        ,  0.        ],
+##       [-1.13667297, -1.13667297],
+##       [ 1.13667297,  1.13667297]]),
+## -0.88279724121093706)
+    all_posns = [particle_posn] + neighbors_posns
+    dms = get_distance_matrices(all_posns, bounds)
+    return lennardJonesForce(dms)
+
+def lj_given_pair(pair_posns, bounds=None):
+    """
+    :returns: acceleration (for each dim) felt by particles, in order
+    """
+##    f, s = pair_posns  # first, second (n-dim lists/array of positions)
+    # Find distance between the two
+    dms = get_distance_matrices(pair_posns, bounds)
+    return lennardJonesForce(dms)
+
+# From KevinJ
+def sparse_tile(x_positions, sp_dx):
+    """
+    Make a sparse matrix like sp_dx but with data from x_positions.
+    :type x_positions: CSC sparse matrix
+    """
+    assert scipy.sparse.isspmatrix_csc(sp_dx)
+    sp_x = sp_dx.copy()
+    for i,j in zip(sp_dx.indptr[:-1], sp_dx.indptr[1:]):
+        sp_x.data[i:j] = x_positions[sp_dx.indices[i:j]]
+    return sp_x
+
+def lj_given_kd_tree(kd, positions, distance=2.5):
+    raise NotImplementedError()
+    # TODO CSC sparse matrices can't do most of the things we need to do in LJ (fancy indexing, division). Maybe another sparse matrix type can?
+##    c = containers[-1]
+##    posns = c.positions
+##    kd = KDTree(posns)
+    sm_dr = kd.sparse_distance_matrix(kd, distance)
+##    sm_dr.getrow(0)
+##    kd.query(posns[0], k=10, distance_upper_bound=2.5)
+    sm_dr = sm_dr.tocsc()
+    sm_dxs = []
+    for dim_ix in xrange(positions.shape[0]):  # KLUDGE, fix with other code that iterates over dims
+        smx = sparse_tile(positions[:,0], sm_dr)
+        smdx = smx - smx.transpose()
+        sm_dxs.append(smdx)
+    return lennardJonesForce([sm_dr]+sm_dxs)
+
 
 def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     """
@@ -72,12 +129,17 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     dr = distance_matrices[-1]
 
     # Eliminate zeros on diagonal
-    dr[np.diag_indices_from(dr)] = 1
+    try:
+        dr[np.diag_indices_from(dr)] = 1
+    except NotImplementedError:
+        # Fancy indexing in assignment not supported for csr matrices.
+        pass # ????
 
     # Build term to make it easy to get potential energy AND force:
     if np.any(dr == 0):
         raise RuntimeError("The distance between some particles is zero. That's bad.")
     over6 = (radius / dr)**6  # WARNING div by zero on diagonals yields inf
+      # TypeError: unsupported operand type(s) for /: 'float' and 'csc_matrix'
     over12 = over6**2
 
     # Force magnitude, from equation 8.3 of Gould
@@ -155,6 +217,7 @@ class SledForcer(object):
         return spring_accels, pulling_accels, damping_as, normal_as
 
 
+#TODO Make a container Builder for adding particles so that pulling out positions etc is a one-time cost
 class Container(object):
     def __init__(self, bounds=None):
         self.bounds = bounds
@@ -164,11 +227,35 @@ class Container(object):
         self.kinetic_energies = []
         self.potential_energy = None
         self.num_particles = 0
-        self.time = 0  # point in time
+        self.time = 0  # point in time that this snapshot belongs to
 
-    def apply_force(self, sled_forcer=None):
-        distance_matrices = self.get_distance_matrices()
-        accelerations, pe = lennardJonesForce(distance_matrices)
+    def apply_force(self, sled_forcer=None, neighbor_facilitator=None):
+        if neighbor_facilitator is not None:
+            nf = neighbor_facilitator
+            posns = self.positions
+##            accelerations, pe = lj_given_kd_tree(nf.generate_kdtree_if_needed(posns), posns, nf.d)
+            pairs = nf.generate_pairs_if_needed(posns)
+            acc_as = np.zeros_like(posns)  # accumulator for accels
+            pe = 0
+            for pair in pairs:
+                pair = list(pair)  # needed for indexing
+                pair_posns = posns[pair]
+                accels, per_pe = lj_given_pair(pair_posns)
+                acc_as[pair] += accels
+                pe += per_pe
+            accelerations = acc_as
+##            # Compare
+##            n_as, n_pe = accelerations, pe
+##            distance_matrices = self.get_distance_matrices()
+##            dm_as, dm_pe = lennardJonesForce(distance_matrices)
+##            diff_pe = dm_pe - n_pe
+##            assert abs(diff_pe) < 1
+##            assert np.allclose(n_as, dm_as, atol=0.1)
+##            diff_as = dm_as - n_as
+##            print "Diff a,pe = {},{}".format(diff_as, diff_pe)
+        else:
+            distance_matrices = self.get_distance_matrices()
+            accelerations, pe = lennardJonesForce(distance_matrices)
         self.potential_energy = pe
         try:
             # If we have a sled, apply spring forces
@@ -256,10 +343,7 @@ class Container(object):
         for i in xrange(cDims):
             xs = bounded[:,i]
             boundary = self.bounds[i]
-            # TODO place in while loop to ensure positions haven't gone multiple times past the boundary
             xs = xs % boundary
-##            xs[xs > boundary] -= boundary
-##            xs[xs < 0] += boundary
             bounded[:,i] = xs  # is this necessary? seems so
         if cPoints == 1:
             bounded = bounded[0]  # pull back out the 1-dim array
@@ -333,7 +417,7 @@ class VerletIntegrator(object):
         c_next.set_positions_velocities_accelerations(
             np.array(new_posns), c_velocities)
         try:
-            c_next.apply_force(self.sled_forcer)
+            c_next.apply_force(self.sled_forcer, self.neighbor_facilitator)
         except AttributeError:
             c_next.apply_force()
         kes = None  # Kinetic Energy
