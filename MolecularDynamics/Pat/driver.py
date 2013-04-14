@@ -21,29 +21,16 @@ also_run_backwards = False
 show_animation = True
 save_animation = False
 particle_radius = 0.5*2**(1.0/6)
-num_forward_frames = 2000
+num_forward_frames = 100
 frame_show_modulus = 10  # only show every nth frame
 dt = 1e-2
-sim_name = ['symmetry', 'line', 'problem_1', 'problem_3'][-1]
+sim_name = ['symmetry', 'line', 'problem_1', 'problem_3'][0]
 extra_params = {
     'symmetry_number': 'eight',
     'Lx': 10,  # only for line
     'random_velocity': 0, 'random_particle_ix': None,
     'lattice': ['triangle', 'square'][1]}
 
-
-def squeeze(container, squeeze_factor, t):
-    c = container
-    Lx, Ly = c.bounds
-    # c is the container object.
-    if t > 3. and Lx > 8.0 * 2.0**(1.0/6):
-        # Squeeze the box!
-        Lx *= squeeze_factor
-        Ly *= squeeze_factor
-##        c.x  *=  squeeze_factor
-##        c.y  *=  squeeze_factor
-##where the squeeze isn't applied until the atoms settle down a little bit, and doesn't continue past the solid packing size. SQUEEZE_FACTORS > .995 work well. Only apply the squeeze about every 20 time steps
-    return container
 
 init_container, special_particles = get_container_for(sim_name, **extra_params)
 print 'special_particles:', special_particles

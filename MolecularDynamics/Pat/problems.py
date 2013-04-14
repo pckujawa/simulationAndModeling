@@ -118,6 +118,21 @@ def problem_3(container, special_particles, **extra_params):
     return container, special_particles
 
 
+def squeeze(container, squeeze_factor, t):
+    raise NotImplementedError()
+    c = container
+    Lx, Ly = c.bounds
+    # c is the container object.
+    if t > 3. and Lx > 8.0 * 2.0**(1.0/6):
+        # Squeeze the box!
+        Lx *= squeeze_factor
+        Ly *= squeeze_factor
+##        c.x  *=  squeeze_factor
+##        c.y  *=  squeeze_factor
+##where the squeeze isn't applied until the atoms settle down a little bit, and doesn't continue past the solid packing size. SQUEEZE_FACTORS > .995 work well. Only apply the squeeze about every 20 time steps
+    return container
+
+
 name_to_sim = {
     'line': line_sim,
     'problem_1': problem_1,

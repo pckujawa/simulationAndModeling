@@ -16,9 +16,8 @@ from matplotlib.animation import FuncAnimation  # v1.1+
 import timeit
 import cPickle as pickle
 
-from patku_sim import Container, VerletIntegrator, moldyn
+from patku_sim import Container, VerletIntegrator, moldyn, graphical
 from patku_sim.libs import Struct
-import graphical
 
 nice_image_codecs = ['libx264']  # keep everything sharp and aren't slow
 fast_codecs = []

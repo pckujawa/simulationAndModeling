@@ -50,3 +50,13 @@ Simple\ ODEs\ and\ conservation
 *.png
 
 .dropbox
+MolecularDynamics/Friction/plots
+MolecularDynamics/Patrick/
+MolecularDynamics/Pat/pat_mol_dyn_symmetry_pe.svg
+ObjectOrientedOrbits/Patrick_twobody_object.py
+Planetary Model/Patrick_twobody_object.py
+Planetary Model/Patrick_twoplanet.py
+Planetary Model/Two_Body_Naylor.py
+MolecularDynamics/GranularMaterials/plots
+MolecularDynamics/Friction/report
+MolecularDynamics/GranularMaterials/report/
