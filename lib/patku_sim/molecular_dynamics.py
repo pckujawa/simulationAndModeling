@@ -56,28 +56,28 @@ def add_square_lattice(container, dimension, dx, dy, random_particle_ix=None, ra
 
 
 def add_triangle_lattice(container, dimension, dx, dy):
-    """
+    """Add particles to a container at x,y > 0 in a triangular configuration.
     :param dimension: length of one of two identical dimensions
     """
-    for i in xrange(dimension):
-        for j in xrange(dimension):
-            y = dy * (j + 0.5)
-            if j % 2 == 0:
-                x = dx * (i + 0.25)
-            else:
-                x = dx * (i + 0.75)
-            container.add_particle([x, y], [0, 0])  # , mass=1
-
-# TODO Create an LJ fn that takes adj list or sets of pairs
-def lj_given_neighbors(particle_posn, neighbors_posns, bounds=None):
-##>>> lj_given_neighbors([0, 0], [ [1, 1], [-1, -1] ])
-##(array([[ 0.        ,  0.        ],
-##       [-1.13667297, -1.13667297],
-##       [ 1.13667297,  1.13667297]]),
-## -0.88279724121093706)
-    all_posns = [particle_posn] + neighbors_posns
-    dms = get_distance_matrices(all_posns, bounds)
-    return lennardJonesForce(dms)
+    xs_base = np.arange(0, dimension, dx) + 0.25
+    xs_odd = xs_base + 0.5
+    ys_base = np.zeros_like(xs_base)
+    ysteps = np.arange(0, dimension, dy) + 0.5
+    for ix, y in enumerate(ysteps):
+        ys = ys_base + y
+        xs = xs_base
+        if ix % 2 == 0:
+            xs = xs_odd  # use cached values
+        for x, y in zip(xs, ys):
+            container.add_particle([x, y], [0, 0])
+##    for i in xrange(dimension):
+##        for j in xrange(dimension):
+##            y = dy * (j + 0.5)
+##            if j % 2 == 0:
+##                x = dx * (i + 0.25)
+##            else:
+##                x = dx * (i + 0.75)
+##            container.add_particle([x, y], [0, 0])  # , mass=1
 
 def lj_given_pair(pair_posns, bounds=None):
     """
@@ -103,19 +103,21 @@ def sparse_tile(x_positions, sp_dx):
 def lj_given_kd_tree(kd, positions, distance=2.5):
     raise NotImplementedError()
     # TODO CSC sparse matrices can't do most of the things we need to do in LJ (fancy indexing, division). Maybe another sparse matrix type can?
-##    c = containers[-1]
-##    posns = c.positions
-##    kd = KDTree(posns)
+    c = containers[-1]
+    positions = c.positions
+    kd = KDTree(positions)
     sm_dr = kd.sparse_distance_matrix(kd, distance)
 ##    sm_dr.getrow(0)
-##    kd.query(posns[0], k=10, distance_upper_bound=2.5)
-    sm_dr = sm_dr.tocsc()
+##    kd.query(positions[0], k=10, distance_upper_bound=2.5)
+    sm_dr_csc = sm_dr.tocsc()  # F's up fancy ixing and multiplying
     sm_dxs = []
-    for dim_ix in xrange(positions.shape[0]):  # KLUDGE, fix with other code that iterates over dims
-        smx = sparse_tile(positions[:,0], sm_dr)
+    for dim_ix in xrange(positions.shape[1]):  # KLUDGE, fix with other code that iterates over dims
+        smx = sparse_tile(positions[:,dim_ix], sm_dr_csc)
         smdx = smx - smx.transpose()
-        sm_dxs.append(smdx)
-    return lennardJonesForce([sm_dr]+sm_dxs)
+        sm_dxs.append(smdx.todok())
+    distance_matrices = sm_dxs + [sm_dr]
+    radius=1.0; epsilon=1.0
+    return lennardJonesForce(distance_matrices)
 
 
 def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
@@ -129,15 +131,22 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     dr = distance_matrices[-1]
 
     # Eliminate zeros on diagonal
-    try:
-        dr[np.diag_indices_from(dr)] = 1
-    except NotImplementedError:
-        # Fancy indexing in assignment not supported for csr matrices.
-        pass # ????
+    dr[np.diag_indices_from(dr)] = 1
 
     # Build term to make it easy to get potential energy AND force:
     if np.any(dr == 0):
         raise RuntimeError("The distance between some particles is zero. That's bad.")
+
+    # If we're using sparse matrices, the radius and epsilon can't be floats because division by spm isn't supported. So turn them into spms.
+    if scipy.sparse.isspmatrix(dr):
+##        from scikits.learn.preprocessing import Normalizer
+        def sparse_like(spmatrix, value):
+            x = spmatrix.copy()
+            x[spmatrix.nonzero()] = value  # SLOW!!!
+            return x
+        radius = sparse_like(dr, radius)
+        epsilon = sparse_like(dr, epsilon)
+
     over6 = (radius / dr)**6  # WARNING div by zero on diagonals yields inf
       # TypeError: unsupported operand type(s) for /: 'float' and 'csc_matrix'
     over12 = over6**2
