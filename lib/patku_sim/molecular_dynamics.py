@@ -15,7 +15,19 @@ import unittest
 ##from pprint import pprint, pformat
 ##from collections import defaultdict, namedtuple
 
-##from libs import Struct
+from libs import Struct
+
+
+class Force(Struct):
+    name = 'Unimplemented'
+    attrs_to_copy = []
+    def __init__(self, **other_attributes):
+##        self.attrs_to_copy = attrs_to_copy
+        Struct.__init__(self, **other_attributes)
+
+    def __call__(self, container):
+        raise NotImplementedError('Subclasses of Force must implement __call__(self, container)')
+
 
 
 def get_pairs_within_distance(container, dist):
@@ -55,14 +67,13 @@ def add_square_lattice(container, dimension, dx, dy, random_particle_ix=None, ra
             container.add_particle([x, y], [vx, vy])  # , mass)
 
 
-def add_triangle_lattice(container, dimension, dx, dy):
+def add_triangle_lattice(container, xlim, ylim, dx, dy):
     """Add particles to a container at x,y > 0 in a triangular configuration.
-    :param dimension: length of one of two identical dimensions
     """
-    xs_base = np.arange(0, dimension, dx) + 0.25
+    xs_base = np.arange(xlim[0], xlim[1], dx) + 0.25
     xs_odd = xs_base + 0.5
     ys_base = np.zeros_like(xs_base)
-    ysteps = np.arange(0, dimension, dy) + 0.5
+    ysteps = np.arange(ylim[0], ylim[1], dy) + 0.5
     for ix, y in enumerate(ysteps):
         ys = ys_base + y
         xs = xs_base
@@ -70,14 +81,6 @@ def add_triangle_lattice(container, dimension, dx, dy):
             xs = xs_odd  # use cached values
         for x, y in zip(xs, ys):
             container.add_particle([x, y], [0, 0])
-##    for i in xrange(dimension):
-##        for j in xrange(dimension):
-##            y = dy * (j + 0.5)
-##            if j % 2 == 0:
-##                x = dx * (i + 0.25)
-##            else:
-##                x = dx * (i + 0.75)
-##            container.add_particle([x, y], [0, 0])  # , mass=1
 
 def lj_given_pair(pair_posns, bounds=None):
     """
@@ -120,20 +123,26 @@ def lj_given_kd_tree(kd, positions, distance=2.5):
     return lennardJonesForce(distance_matrices)
 
 
-def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
+def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0, cutoff_dist=float('inf'), anchor_ixs = None):
     """
     :param radius: same as $\sigma$
     :param epsilon: Constant of proportionality
+    :param cutoff_dist: distance beyond which to ignore this force
     :returns: accelerations and potential energy
     :rtype: tuple(ndarray, float)
     """
     # Find position differences
     dr = distance_matrices[-1]
+    ixs_not_touching = dr > cutoff_dist
+
+    if anchor_ixs is not None:
+        # How can we make sure anchors' effects aren't felt on other anchors?
+        assert dr[:, anchor_ixs][anchor_ixs].shape == tuple([len(anchor_ixs)]*2)
+        dr[:, anchor_ixs][anchor_ixs] = 1e10  # far enough away to have insignificant effect
 
     # Eliminate zeros on diagonal
     dr[np.diag_indices_from(dr)] = 1
 
-    # Build term to make it easy to get potential energy AND force:
     if np.any(dr == 0):
         raise RuntimeError("The distance between some particles is zero. That's bad.")
 
@@ -147,18 +156,22 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
         radius = sparse_like(dr, radius)
         epsilon = sparse_like(dr, epsilon)
 
-    over6 = (radius / dr)**6  # WARNING div by zero on diagonals yields inf
-      # TypeError: unsupported operand type(s) for /: 'float' and 'csc_matrix'
+    # Build term to make it easy to get potential energy AND force:
+    over6 = (radius / dr)**6
     over12 = over6**2
 
     # Force magnitude, from equation 8.3 of Gould
-    magnitude = 24.0 * epsilon/dr * (2.0*over12 - over6)
+    if np.isinf(cutoff_dist):
+        magnitude = 24.0 * epsilon/dr * (2.0*over12 - over6)
+    else:
+        magnitude = 24.0 * epsilon/dr * (2.0*over12)  # no attraction
 
     # Project onto components, sum all forces on each particle The dx,dy,dz
     # are zero on diagonal and save from dr = -1 on diagonal contributing to
     # force
     accelerations = []
     for dx in distance_matrices[:-1]:
+        dx[ixs_not_touching] = 0
         ax = np.sum(-magnitude * dx/dr, axis=1)
         accelerations.append(ax)
     accelerations = np.array(accelerations)
@@ -166,7 +179,9 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0):
     # Easiest to compute energy at this point from Equation 8.2 of Gould
     # Note the triu to avoid double counting entries and the k=1 to avoid
     # self-potential due to dr being -1 to avoid divergence
-    pe = 4.0 * epsilon * np.sum(np.sum(np.triu(over12 - over6, k=1)))
+    diff_term = over12 - over6
+    diff_term[ixs_not_touching] = 0
+    pe = 4.0 * epsilon * np.sum(np.sum(np.triu(diff_term, k=1)))
     return accelerations.transpose(), pe
 
 
@@ -238,7 +253,8 @@ class Container(object):
         self.num_particles = 0
         self.time = 0  # point in time that this snapshot belongs to
 
-    def apply_force(self, sled_forcer=None, neighbor_facilitator=None):
+    def apply_force(self, forces=None, neighbor_facilitator=None, ixs_unmoving=None):
+        accel_map = {}
         if neighbor_facilitator is not None:
             nf = neighbor_facilitator
             posns = self.positions
@@ -262,27 +278,32 @@ class Container(object):
 ##            assert np.allclose(n_as, dm_as, atol=0.1)
 ##            diff_as = dm_as - n_as
 ##            print "Diff a,pe = {},{}".format(diff_as, diff_pe)
+        elif forces is not None:
+            for force in forces:
+                accelerations = force(self)
+                accel_map[force.name] = accelerations
+                # If the force specifies attributes that should be copied to this container (e.g. LJ would have PE), do so
+                try:
+                    for attr in force.attrs_to_copy:
+                        setattr(self, attr, getattr(force, attr))
+                except AttributeError:
+                    pass
         else:
             distance_matrices = self.get_distance_matrices()
             accelerations, pe = lennardJonesForce(distance_matrices)
-        self.potential_energy = pe
+            self.potential_energy = pe
+##            accelerations[self.sled_particle_ixs] += sled_accelerations
+##            # If we have a floor, keep it still
+##            accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
+##        for a in accel_map.itervalues():
+##            if np.any(a > 1):
+##                pass
+        accelerations = np.sum(accel_map.values(), axis=0)  # sum dim values
+
         try:
-            # If we have a sled, apply spring forces
-            ix_damper = self.sled_particle_ixs[0]
-            ix_puller = self.sled_particle_ixs[-1]
-            sled_posns = self._positions[ix_damper:]
-            assert ix_puller == self.num_particles-1
-            damping_vs = self._velocities[ix_damper]  # first sled particle
-            spring, pull, damp, normal = sled_forcer.apply_force(sled_posns, self.time, damping_vs)
-            self.spring_accelerations = spring
-            self.pull_accelerations = pull[-1]  # one particle, but all dims
-            self.damp_accelerations = damp[0]  # same
-            sled_accelerations = spring + pull + damp + normal
-            accelerations[self.sled_particle_ixs] += sled_accelerations
-            # If we have a floor, keep it still
-            accelerations[self.floor_particle_ixs] = 0  # broadcasts across all dimensions
-        except AttributeError:
-            pass
+            self.anchor_accels = accelerations[ixs_unmoving]
+            accelerations[ixs_unmoving] = 0  # all dims
+        except AttributeError: pass
         self._accelerations = accelerations.tolist()
 
     def add_particle(self, position, velocity=None, acceleration=None):
@@ -358,6 +379,11 @@ class Container(object):
             bounded = bounded[0]  # pull back out the 1-dim array
         return bounded
 
+    def dims_iter(self):
+        """ Dimensions iterator (numerical ixs)
+        """
+        return xrange(len(self._positions[0]))
+
     def get_distance_matrices(self):
         return get_distance_matrices(self._positions, self.bounds)
 
@@ -426,9 +452,13 @@ class VerletIntegrator(object):
         c_next.set_positions_velocities_accelerations(
             np.array(new_posns), c_velocities)
         try:
-            c_next.apply_force(self.sled_forcer, self.neighbor_facilitator)
+            c_next.apply_force(self.forces,
+                ixs_unmoving = getattr(self, 'ixs_unmoving', None))
         except AttributeError:
-            c_next.apply_force()
+            try:
+                c_next.apply_force(self.sled_forcer, self.neighbor_facilitator)
+            except AttributeError:
+                c_next.apply_force()
         kes = None  # Kinetic Energy
         lVxs = []  # l=list; store vxs values
         for xs, vxs, axs, axs_prev in zip(

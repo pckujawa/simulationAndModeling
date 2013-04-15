@@ -49,7 +49,7 @@ class Struct(object):
 
     def __repr__(self):
         '''Return a pretty string representation of this object.'''
-        return self.__str__()
+        return str(self)
 
 
 class Body(Struct):

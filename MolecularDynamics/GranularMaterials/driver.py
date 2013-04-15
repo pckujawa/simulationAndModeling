@@ -24,25 +24,41 @@ nice_image_codecs = ['libx264']  # keep everything sharp and aren't slow
 anim_save_kwargs = {'fps': 30, 'codec': nice_image_codecs[0]}
 also_run_backwards = False
 show_animation = True
-save_animation = False
+save_animation = True
 particle_radius = 0.5*2**(1.0/6)
 diam = 2*particle_radius
 frame_show_modulus = 10  # only show every nth frame
-figsize = (4, 10)  # for animation only
+figsize = (6, 10)  # for animation only
 num_frames_to_bootstrap = 1
 
 dt = 1e-2
 p = Struct(name='Sand Sim parameters',
+    dt = dt,  # for easier naming
     gravity_magnitude = 3,
-    funnel_width = 20*diam,
-    hole_width = 4*diam,
-    d_angle_from_horizon_to_wall = 45,  # d for degrees
-    dist_between_anchors = diam,
-    num_grains = 50)  # may use dx, dy for tri lattice instead of N
+    viscous_damping_magnitude = -10,
+    funnel_width = 10*diam,
+    hole_width = diam,#3*diam,  # can't be zero or particles overlap
+    d_angle_from_horizon_to_wall = 60,  # d for degrees
+    dist_between_anchors = diam+0.01,
+    num_grains = 100)  # may use dx, dy for tri lattice instead of N
 
-xlim = (0, p.funnel_width)
-ylim = tuple(np.array([0, p.num_grains]) - p.num_grains/2.0)
+def params_tostring(self):
+    return '{num_grains} grains g={gravity_magnitude:.1f} damp={viscous_damping_magnitude} hw={hole_width:.2f} angle={d_angle_from_horizon_to_wall} dt={dt:.2f}'.format(**self.__dict__)
+
+xlim = (-diam, p.funnel_width + diam)
+ylim = np.array([-1.1, 0.9]) * p.funnel_width/2.0 * math.tan(math.radians(p.d_angle_from_horizon_to_wall))
 lstats = []  # list of stats
+
+
+class RunFunc():
+    def __init__(self, y_funnel_bottom):
+        self.y_funnel_bottom = y_funnel_bottom
+
+    def __call__(self, container):
+        return False
+        count = np.sum(container.positions < self.y_funnel_bottom)
+        print count, 'grains thru the hole'
+        return count < p.num_grains
 
 
 
@@ -64,57 +80,61 @@ class SimStats(object):
                 {k:v for k,v in self.__dict__.iteritems() if k in keep})
 
 
-class GravityForce(object):
-    def __init__(self, g=3):
-        self.g = g
-
-    def __call__(self, container):
-        # Only affect y acceleration
-        axs = np.zeros(container.num_particles)
-        ays = np.repeat(g, container.num_particles)
-        azs = axs
-        return axs, ays, azs
-
-
-class RunFunc():
-    def __init__(self):
-        pass
-    def __call__(self):
-        return False
 
 
 def run(
-    normal_force = 0,
     neighbor_facilitator = None
     ):
-    global containers, lstats
+    global containers, lstats, ixs_unmoving
     lj_method = 'dm' if neighbor_facilitator is None else 'nl'  # LJ method used either distance matrix or neighbor list
-    info_for_naming = '{} g={:.0f} dt={:.2f}'.format('numParticles', normal_force, dt)
+    info_for_naming = params_tostring(p)
 
     print 'running with', info_for_naming
 
     init_container, y_funnel_bottom = problems.hourglass(**p.__dict__)
-    problems.add_sand(init_container, p.funnel_width, diam, diam)
-    containers = [init_container]
-    integrator = VerletIntegrator()
+    ixs_unmoving = range(init_container.num_particles)
+    forces = [
+        problems.GravityForce(g = p.gravity_magnitude),
+        problems.LJRepulsiveAndDampingForce(cutoff_dist = diam,
+                viscous_damping_magnitude = p.viscous_damping_magnitude,
+                anchor_ixs = ixs_unmoving)
+    ]
 
-    run_func = None# RunFunc(last_particle_position)
+    packing_factor = 1.0  # guess as to how many particles fit into a unit area
+    sand_height = p.num_grains / (p.funnel_width * packing_factor)
+    problems.add_sand(init_container, p.funnel_width, sand_height, diam, diam)
+    containers = [init_container]
+
+    integrator = VerletIntegrator()
+    integrator.forces = forces
+    integrator.ixs_unmoving = ixs_unmoving
+
+    run_func = RunFunc(y_funnel_bottom)
+
+    sim_wide_params = Struct(
+            anchor_ixs = ixs_unmoving)
+
     graphical.animate_with_live_integration(containers, integrator, dt, xlim, ylim, figsize, particle_radius, frame_show_modulus, num_frames_to_bootstrap, info_for_naming, save_animation, show_animation, run_func,
-    anim_save_kwargs = anim_save_kwargs)
+        anim_save_kwargs = anim_save_kwargs,
+        sim_wide_params = sim_wide_params)
 
     stats = SimStats(info_for_naming, containers,
-        gravity_magnitude = normal_force,
+        gravity_magnitude = p.gravity_magnitude,
         dt = dt)
 
     lstats.append(stats)
-    # graphical.plot_sand(stats.times, stats.???, normal_force=stats.gravity_magnitude, info_for_naming=info_for_naming, show=False)
+    # graphical.plot_sand(stats.times, stats.???, gravity_magnitude=stats.gravity_magnitude, info_for_naming=info_for_naming, show=False)
 
 
 for use_neighbors in [False]:
     neighbor_facilitator = NeighborFacilitator(2.5, 10) if use_neighbors else None
-    run_timed = lambda: run(p.gravity_magnitude, neighbor_facilitator)
+    run_timed = lambda: run(neighbor_facilitator)
     num_times = 1
     timer = timeit.Timer(run_timed)
-    time_taken = timer.timeit(num_times)
-    used_ns = 'with' if use_neighbors else 'without'
-    print '\tfinished {} timed run {} neighbors in {}s'.format(num_times, used_ns, time_taken)
+    try:
+        time_taken = timer.timeit(num_times)
+        used_ns = 'with' if use_neighbors else 'without'
+        print '\tfinished {} timed run {} neighbors in {}s'.format(num_times, used_ns, time_taken)
+    except AttributeError as e:
+        print e  # TkInter error usually; can be ignored
+        print "Can't save when in a Tk python session, but we get this error"

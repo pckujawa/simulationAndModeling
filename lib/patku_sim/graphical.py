@@ -13,6 +13,7 @@ import pylab as pl
 ##from collections import defaultdict, namedtuple
 from matplotlib.animation import FuncAnimation  # v1.1+
 import os
+import textwrap
 
 working_directory = os.getcwd()
 
@@ -34,13 +35,14 @@ def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="green", alp
 
 def animate_with_live_integration(
     containers, integrator, dt, xlim, ylim, figsize, particle_radius,
-    frame_show_modulus=1, num_frames_to_bootstrap=0, info_for_naming='', save_animation=False, show_animation=True, run_until_func=None, anim_save_kwargs=None):
+    frame_show_modulus=1, num_frames_to_bootstrap=0, info_for_naming='', save_animation=False, show_animation=True, run_until_func=None, anim_save_kwargs=None, anchor_ixs=None, sim_wide_params=None):
     """
     """
     global num_forward_frames
+
     anim_save_kwargs = anim_save_kwargs or {'fps': 30}
     init_container = containers[0]
-    plot_title = 'Friction' + info_for_naming
+    plot_title = info_for_naming
 
     also_run_backwards = False
     num_forward_frames = len(containers)
@@ -48,7 +50,9 @@ def animate_with_live_integration(
     fig = pl.figure(figsize=figsize)
     ax = pl.axes(xlim=xlim, ylim=ylim)
     ax.set_aspect('equal')  # NOTE: This can make the plot look squished if figsize isn't wide enough
-    pl.title(plot_title, fontsize=16)
+    title_width = figsize[0] * 3  # dynamic way to figure out how much text will fit in the title
+    title_wrapped = '\n'.join(textwrap.wrap(plot_title, width=title_width))
+    pl.title(title_wrapped, fontsize=12)
     pl.xlabel('X Position')
     pl.ylabel('Y Position')
 
@@ -78,7 +82,7 @@ def animate_with_live_integration(
         pulling_force_text.set_text('')
         damp_force_text.set_text('')
         for c in circles:
-            c.center = (-1, -1)  # hide off-screen
+            c.center = (-100, -100)  # hide off-screen
         return circles + [time_text, pulling_force_text, damp_force_text]
 
 
@@ -99,13 +103,20 @@ def animate_with_live_integration(
             time_text.set_text('time = %.1f' % c.time)
             pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
             damp_force_text.set_text('Fd = ' + str(c.damp_accelerations))
-        except AttributeError:
-            pass
+        except AttributeError: pass
         facecolor = 'green'
         # TODO paint floor black, sled green, etc
-        for i,circle in zip(xrange(init_container.num_particles), circles):
+        for i, circle in zip(xrange(init_container.num_particles), circles):
             circle.center = (posns[i][0], posns[i][1])  # x and y
             circle.set_facecolor(facecolor)
+        try:
+            # KLUDGE anchor_ixs shouldn't be in the container (they don't change)
+            for ix, accels_per_dim in zip(c.anchor_ixs, c.anchor_accels):
+                anchor_circle = circles[ix]
+                anchor_circle.set_facecolor('black')
+                alpha = np.linalg.norm(accels_per_dim) / 10.0
+                anchor_circle.set_alpha(alpha)
+        except AttributeError: pass
         return circles + [time_text, pulling_force_text, damp_force_text]
 
     # Amount of framedata to keep around for saving movies.

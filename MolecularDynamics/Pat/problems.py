@@ -97,7 +97,7 @@ def problem_1(container, special_particles, **extra_params):
     container.bounds = (Lx, Ly)
     dx = Lx / float(N)
     dy = Ly / float(N)
-    moldyn.add_triangle_lattice(container, N, dx, dy)
+    moldyn.add_triangle_lattice(container, N, N, dx, dy)
     return container, special_particles
 
 
