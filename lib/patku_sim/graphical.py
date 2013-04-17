@@ -56,14 +56,6 @@ def animate_with_live_integration(
     pl.xlabel('X Position')
     pl.ylabel('Y Position')
 
-    circles = []
-    for i in xrange(init_container.num_particles):
-        e = get_nice_circle(0, 0, particle_radius)
-        circles.append(ax.add_patch(e))
-    time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
-    pulling_force_text = ax.text(0.5, 0.90, '', transform=ax.transAxes)
-    damp_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
-
     # Bootstrap some frames using user-suppliend func and/or count
     if run_until_func is not None:
         while run_until_func(containers[-1]):
@@ -74,6 +66,18 @@ def animate_with_live_integration(
         for i in xrange(frame_show_modulus):
             next_container = integrator.step(containers[-1], dt)
             containers.append(next_container)
+
+    ## Set up plotting
+    circles = []
+    for i in xrange(init_container.num_particles):
+        e = get_nice_circle(0, 0, particle_radius)
+        circles.append(ax.add_patch(e))
+    time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
+    pulling_force_text = ax.text(0.5, 0.90, '', transform=ax.transAxes)
+    damp_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
+##    aperture_line = ax.plot(xlim, [sim_wide_params.y_funnel_bottom]*2,
+##            linestyle='-', color='black', alpha=0.5,
+##            linewidth=0.5)
 
     # init fn seems to prevent 'ghosting' of first-plotted data
     def init():
@@ -110,11 +114,10 @@ def animate_with_live_integration(
             circle.center = (posns[i][0], posns[i][1])  # x and y
             circle.set_facecolor(facecolor)
         try:
-            # KLUDGE anchor_ixs shouldn't be in the container (they don't change)
-            for ix, accels_per_dim in zip(c.anchor_ixs, c.anchor_accels):
+            for ix, force_mag in zip(sim_wide_params.anchor_ixs, c.anchor_accels):
                 anchor_circle = circles[ix]
                 anchor_circle.set_facecolor('black')
-                alpha = np.linalg.norm(accels_per_dim) / 10.0
+                alpha = force_mag / 50.0 + 0.1  # always > 0 so visible
                 anchor_circle.set_alpha(alpha)
         except AttributeError: pass
         return circles + [time_text, pulling_force_text, damp_force_text]

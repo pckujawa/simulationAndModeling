@@ -25,7 +25,7 @@ class Force(Struct):
 ##        self.attrs_to_copy = attrs_to_copy
         Struct.__init__(self, **other_attributes)
 
-    def __call__(self, container):
+    def __call__(self, container, sim_wide_params):
         raise NotImplementedError('Subclasses of Force must implement __call__(self, container)')
 
 
@@ -123,7 +123,9 @@ def lj_given_kd_tree(kd, positions, distance=2.5):
     return lennardJonesForce(distance_matrices)
 
 
-def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0, cutoff_dist=float('inf'), anchor_ixs = None):
+def lennardJonesForce(distance_matrices,
+        radius=1.0, epsilon=1.0, cutoff_dist=float('inf'),
+        anchor_ixs = None):
     """
     :param radius: same as $\sigma$
     :param epsilon: Constant of proportionality
@@ -137,7 +139,7 @@ def lennardJonesForce(distance_matrices, radius=1.0, epsilon=1.0, cutoff_dist=fl
 
     if anchor_ixs is not None:
         # How can we make sure anchors' effects aren't felt on other anchors?
-        assert dr[:, anchor_ixs][anchor_ixs].shape == tuple([len(anchor_ixs)]*2)
+##        assert dr[:, anchor_ixs][anchor_ixs].shape == tuple([len(anchor_ixs)]*2)
         dr[:, anchor_ixs][anchor_ixs] = 1e10  # far enough away to have insignificant effect
 
     # Eliminate zeros on diagonal
@@ -253,7 +255,7 @@ class Container(object):
         self.num_particles = 0
         self.time = 0  # point in time that this snapshot belongs to
 
-    def apply_force(self, forces=None, neighbor_facilitator=None, ixs_unmoving=None):
+    def apply_force(self, forces=None, sim_wide_params=None, neighbor_facilitator=None):
         accel_map = {}
         if neighbor_facilitator is not None:
             nf = neighbor_facilitator
@@ -280,7 +282,7 @@ class Container(object):
 ##            print "Diff a,pe = {},{}".format(diff_as, diff_pe)
         elif forces is not None:
             for force in forces:
-                accelerations = force(self)
+                accelerations = force(self, sim_wide_params)
                 accel_map[force.name] = accelerations
                 # If the force specifies attributes that should be copied to this container (e.g. LJ would have PE), do so
                 try:
@@ -301,8 +303,10 @@ class Container(object):
         accelerations = np.sum(accel_map.values(), axis=0)  # sum dim values
 
         try:
-            self.anchor_accels = accelerations[ixs_unmoving]
-            accelerations[ixs_unmoving] = 0  # all dims
+            anchor_ixs = sim_wide_params.anchor_ixs
+            # http://stackoverflow.com/questions/7741878/how-to-apply-numpy-linalg-norm-to-each-row-of-a-matrix
+            self.anchor_accels = np.sum(np.abs(accelerations[anchor_ixs])**2, axis=-1)**(1./2)
+            accelerations[anchor_ixs] = 0  # all dims
         except AttributeError: pass
         self._accelerations = accelerations.tolist()
 
@@ -363,7 +367,7 @@ class Container(object):
         if self.bounds is None:
             return points
 
-        bounded = np.copy(points)
+        bounded = np.copy(points)  # SLOW!!!
         # Because numpy doesn't handle multi-dimensional arrays the same as 1-dimensional ones, it's easiest to just make it always look like a multi-dim array
         points_shape = points.shape
         cPoints = points_shape[0]
@@ -372,8 +376,16 @@ class Container(object):
         _ignore, cDims = bounded.shape
         for i in xrange(cDims):
             xs = bounded[:,i]
-            boundary = self.bounds[i]
-            xs = xs % boundary
+            min_b, max_b = self.bounds[i]
+            assert min_b < max_b
+            width = max_b - min_b
+            # (EDIT: Wrong!) Because of the way that mod works (it wraps negative values around, rather than returning -(abs(x) % abs(y))), we can just use it straight
+            # Need to treat neg and pos values different because of behavior of mod operator
+            # On second thought, don't use mod, just assume small jumps
+            too_far_neg_ixs = xs < min_b
+            xs[too_far_neg_ixs] += width
+            too_far_pos_ixs = xs > max_b
+            xs[too_far_pos_ixs] -= width
             bounded[:,i] = xs  # is this necessary? seems so
         if cPoints == 1:
             bounded = bounded[0]  # pull back out the 1-dim array
@@ -410,13 +422,16 @@ def get_distance_matrices(points, bounds=None, one_point_ok=False):
             xdist = xdist - xdist.T
             if bounds is not None:
                 try:
-                    xbound = bounds[i]
+                    min_b, max_b = bounds[i]
+                    width = max_b - min_b
                 except IndexError:
                     raise Exception("There aren't enough boundaries for the number of dimensions in the points. Ensure that your bounds are of the same dimension as your points.")
-                xdist[xdist > xbound / 2.0] -= xbound
-                assert not np.any(xdist > xbound/2.0)
-                xdist[xdist < -xbound / 2.0] += xbound
-                assert not np.any(xdist < -xbound/2.0)
+                # Can't use mod because the lower triangle is negative and it wraps around weird
+##                xdist = xdist % (width / 2.0)
+                xdist[xdist > width / 2.0] -= width
+                assert not np.any(xdist > width/2.0)
+                xdist[xdist < -width / 2.0] += width
+                assert not np.any(xdist < -width/2.0)
             yield xdist
     linear_distances = list(_iter())
     radial_distance = np.zeros_like(linear_distances[0])
@@ -452,8 +467,7 @@ class VerletIntegrator(object):
         c_next.set_positions_velocities_accelerations(
             np.array(new_posns), c_velocities)
         try:
-            c_next.apply_force(self.forces,
-                ixs_unmoving = getattr(self, 'ixs_unmoving', None))
+            c_next.apply_force(self.forces, sim_wide_params = self.sim_wide_params)
         except AttributeError:
             try:
                 c_next.apply_force(self.sled_forcer, self.neighbor_facilitator)
@@ -519,7 +533,7 @@ class DistanceMatrixTests(unittest.TestCase):
             [0, 1],
             [-1, 0]])
         ey = np.copy(ex)
-        ax, ay, a_r = get_distance_matrices([[0,0], [3,1]], bounds=(2, 2))
+        ax, ay, a_r = get_distance_matrices([[0,0], [3,1]], bounds=[(0, 2),(0, 2)])
         for e,a, in ((ex, ax), (ey, ay)):
             self.assertTrue(np.all(np.equal(e, a)))
 
@@ -527,18 +541,30 @@ class DistanceMatrixTests(unittest.TestCase):
         expected = np.array([
             [0, -0.2],
             [0.2, 0]])
-        actual, a_r = get_distance_matrices([[0.1], [0.9]], bounds=(1,))
+        actual, a_r = get_distance_matrices([[0.1], [0.9]], bounds=[(0, 1)])
         for e,a in zip(expected.flat, actual.flat):
             self.assertAlmostEqual(e, a)
 
 class ContainerTests(unittest.TestCase):
     #NOTE: A 'p' preceding a number in a test method name means ., e.g. 0p1 = 0.1
+    def get_bound_value(self, container, scalar):
+        return container.bound(np.array([scalar]))[0]
+
     def test_point_at_1p1_and_bounds_at_1_wraps_to_point_at_0p1(self):
-        c = Container(bounds=(1,))
+        c = Container(bounds=[(0, 1)])
         expected = np.array([0.1])
         actual = c.bound(np.array([1.1]))
         self.assertAlmostEqual(expected[0], actual[0])
 
+    def test_min_and_max_bounds(self):
+        l, r = (-1, 2)
+        c = Container(bounds=[(l, r)])
+        # out of bounds neg
+        self.assertAlmostEqual(r - l - 1.9, self.get_bound_value(c, -1.9))
+        # within bounds pos
+        self.assertAlmostEqual(1.1, self.get_bound_value(c, 1.1))
+        # within bounds neg
+        self.assertAlmostEqual(-0.9, self.get_bound_value(c, -0.9))
 
 
 if __name__ == '__main__':

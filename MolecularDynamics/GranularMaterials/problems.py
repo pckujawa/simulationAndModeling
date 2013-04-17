@@ -15,9 +15,65 @@ import math
 #from matplotlib.animation import FuncAnimation  # v1.1+
 #import timeit
 #import cPickle as pickle
+import os
 
 from patku_sim import Container, moldyn#, graphical, VerletIntegrator,
 from patku_sim.libs import Struct
+
+
+
+class SimStats(object):
+    def __init__(self, info_for_naming, containers, sim_wide_params, **attributes):
+        self.info_for_naming = info_for_naming
+        self.sim_wide_params = sim_wide_params
+        self.__dict__.update(attributes)
+        # Set up multi-dim data columns
+        c0 = containers[0]
+        self.cols_1d = ['times', 'grains_below_aperture']#, 'flux']
+        # Some of the following columns are n-dimensional (e.g. accels would have a column for each anchor)
+        self.cols_nd = ['anchor_accels']  # n-dim
+        self.attr_names = self.cols_1d + self.cols_nd
+        for attr in self.attr_names:
+            setattr(self, attr, [])
+        for c in containers[1:]:  # first container usually has no useful information (and is missing attributes)
+            self.times.append(c.time)
+            self.anchor_accels.append(c.anchor_accels)
+            y_hole = sim_wide_params.y_funnel_bottom
+            grains_below_aperture = np.sum(c.positions < y_hole)
+            self.grains_below_aperture.append(grains_below_aperture)
+##            self.flux.append(TODO)
+        for attr in self.attr_names:
+            # convert to arrays
+            setattr(self, attr, np.array(getattr(self, attr)))
+
+    def iter_csv_lines(self, take_every=1):
+##        'time', 'ix', 'value'
+##        0, 0, 5
+##        0, 1, 2
+##        ...
+##        9, 0, 2
+        yield ','.join(['time', 'ix', 'value'])
+        for time_ix, time in enumerate(self.times):
+            if time_ix % take_every != 0:
+                continue
+            for ix, value in enumerate(self.anchor_accels[time_ix]):
+                yield ','.join(str(a) for a in [time, ix, value])
+
+    def write_csvs(self, take_every=1):
+        pre = self.info_for_naming + '/'  # path prefix
+        if not os.path.exists(self.info_for_naming):
+            os.makedirs(self.info_for_naming)
+        with open(pre + 'anchor_accels.csv', 'w') as f:
+            for line in self.iter_csv_lines(take_every):
+                f.write(line + '\n')
+
+    def __str__(self):
+        return self.info_for_naming
+
+    def __repr__(self):
+        keep = self.__dict__.viewkeys() - {'times', 'containers', 'info_for_naming'}
+        return '{} {}'.format(self.info_for_naming,
+                {k:v for k,v in self.__dict__.iteritems() if k in keep})
 
 
 class GravityForce(moldyn.Force):
@@ -25,33 +81,39 @@ class GravityForce(moldyn.Force):
     def __init__(self, g=3):
         self.g = g
 
-    def __call__(self, container):
+    def __call__(self, container, sim_wide_params):
         # Only affect y acceleration
         axs = np.zeros(container.num_particles)
         ays = np.repeat(-self.g, container.num_particles)
         if len(container.dims_iter()) == 3:
             azs = axs
-            return np.array([axs, ays, azs]).transpose()
-        return np.array([axs, ays]).transpose()
+            all_as = np.array([axs, ays, azs]).transpose()
+        else:
+            all_as = np.array([axs, ays]).transpose()
+        all_as[sim_wide_params.anchor_ixs] = 0
+        return all_as
 
 
 class LJRepulsiveAndDampingForce(moldyn.Force):
     name = 'LJ Repulsive and Damping'
     attrs_to_copy = ['pe', 'anchor_ixs']
 
-    def __init__(self, cutoff_dist, radius=1.0, epsilon=1.0, viscous_damping_magnitude=0, anchor_ixs=None):
+    def __init__(self, cutoff_dist, radius=1.0, epsilon=1.0, viscous_damping_magnitude=0):
 ##        super(type(self), self).__init__()
         self.cutoff_dist = cutoff_dist
         self.radius = radius
         self.epsilon = epsilon
         self.damping_magnitude = viscous_damping_magnitude
-        self.anchor_ixs = anchor_ixs or []
 
-    def __call__(self, container):
+    def __call__(self, container, sim_wide_params):
         distance_matrices = container.get_distance_matrices()
         # LJ
         accelerations, pe = moldyn.lennardJonesForce(
-            distance_matrices, radius=self.radius, epsilon=self.epsilon, cutoff_dist=self.cutoff_dist, anchor_ixs = self.anchor_ixs)
+                distance_matrices,
+                radius=self.radius,
+                epsilon=self.epsilon,
+                cutoff_dist=self.cutoff_dist,
+                anchor_ixs = sim_wide_params.anchor_ixs)
         self.pe = pe  # should LJ func calc this differently since we are doing a cutoff?
         # Damping
         dx, dy, dr = distance_matrices  # KLUDGE
@@ -70,14 +132,16 @@ class LJRepulsiveAndDampingForce(moldyn.Force):
         return accelerations
 
 
-def hourglass(funnel_width, hole_width, d_angle_from_horizon_to_wall, dist_between_anchors, **kwargs_ignore):
+def hourglass(funnel_width, hole_width, d_angle_from_horizon_to_wall, dist_between_anchors, diam, top_bound, **kwargs_ignore):
     """ Make a container with "anchor" particles set up as walls of an hourglass
-    :param: kwargs_ignore ignored extra args so you can use an exploded dictionary (**myargdict) for arg input
+    :param kwargs_ignore: ignored extra args so you can use an exploded dictionary (**myargdict) for arg input
+    :param diam: diameter of each grain and anchor
     :returns: container, y_funnel_bottom
     """
     r_angle = math.radians(d_angle_from_horizon_to_wall)
     tan_over_2 = math.tan(r_angle)/2.0
     height_funnel = funnel_width * tan_over_2
+    hole_width += diam  # trick to allow space so bottom anchors don't overlap, e.g. so a zero-width hole actually places anchors with their borders touching instead of with their centers touching
     height_hole = hole_width * tan_over_2
     xdist = dist_between_anchors * math.cos(r_angle)
     ydist = dist_between_anchors * math.sin(r_angle)
@@ -114,8 +178,7 @@ def hourglass(funnel_width, hole_width, d_angle_from_horizon_to_wall, dist_betwe
     # Boundary so particles keep recirculating
     #  x is just a fudge value > funnel width so it doesn't affect anything
     #  y is some arbitrary line below the bottom of the funnel
-##    c.bounds = (funnel_width+1, y_funnel_bottom - 5*hole_width)
-    #TODO check that bounds code will allow negative y
+    c.bounds = [(0, funnel_width + diam), (y_funnel_bottom - 5*diam, top_bound)]
     return c, y_funnel_bottom
 
 def add_sand(container, width, height, dx, dy):
