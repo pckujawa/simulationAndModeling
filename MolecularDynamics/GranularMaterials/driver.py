@@ -22,8 +22,7 @@ import problems
 
 nice_image_codecs = ['libx264']  # keep everything sharp and aren't slow
 anim_save_kwargs = {'fps': 30, 'codec': nice_image_codecs[0]}
-also_run_backwards = False
-show_animation = 0
+show_animation = False
 save_animation = True  # can't show and save, for some reason (TkError)
 particle_radius = 0.5*2**(1.0/6)
 diam = 2*particle_radius
@@ -100,7 +99,9 @@ def run(neighbor_facilitator = None):
     w = distance(*xlim)
     h = distance(*ylim)
     a_ratio = w / h
-    figsize = (a_ratio * figheight, figheight)
+    # figsize must be integers or animation will error saving to file!
+    figheight = int(figheight)
+    figsize = (int(a_ratio * figheight)+1, figheight)
 
     containers = [init_container]
 

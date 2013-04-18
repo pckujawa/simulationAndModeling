@@ -14,11 +14,12 @@ import pylab as pl
 from matplotlib.animation import FuncAnimation  # v1.1+
 import os
 import textwrap
+from libs import make_dirs_if_necessary
 
 working_directory = os.getcwd()
 
 # Circle code courtesy of Kevin Joyce
-def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="green", alpha=0.6, ax=None):
+def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="tan", alpha=0.6, ax=None):
     """ add a circle to ax or current axes
     """
     e = pl.Circle([x, y], radius)
@@ -27,7 +28,7 @@ def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="green", alp
     ax.add_artist(e)
     e.set_clip_box(ax.bbox)
     e.set_edgecolor( color )
-    e.set_linewidth(3)
+    e.set_linewidth(1)
     e.set_facecolor( facecolor )  # "none" not None
     e.set_alpha( alpha )
     return e
@@ -47,14 +48,16 @@ def animate_with_live_integration(
     also_run_backwards = False
     num_forward_frames = len(containers)
 
+    for i in [0, 1]:
+        assert type(figsize[i]) is int, "Can't save an animation with float figsize"
     fig = pl.figure(figsize=figsize)
     ax = pl.axes(xlim=xlim, ylim=ylim)
     ax.set_aspect('equal')  # NOTE: This can make the plot look squished if figsize isn't wide enough
-    title_width = figsize[0] * 3  # dynamic way to figure out how much text will fit in the title
+    title_width = int(figsize[0] * 10)  # dynamic way to figure out how much text will fit in the title
     title_wrapped = '\n'.join(textwrap.wrap(plot_title, width=title_width))
     pl.title(title_wrapped, fontsize=12)
-    pl.xlabel('X Position')
-    pl.ylabel('Y Position')
+##    pl.xlabel('X Position')
+##    pl.ylabel('Y Position')
 
     # Bootstrap some frames using user-suppliend func and/or count
     if run_until_func is not None:
@@ -82,12 +85,12 @@ def animate_with_live_integration(
     # init fn seems to prevent 'ghosting' of first-plotted data
     def init():
         """initialize animation"""
-        time_text.set_text('')
-        pulling_force_text.set_text('')
-        damp_force_text.set_text('')
+        texts = [time_text, pulling_force_text, damp_force_text]
+        for t in texts:
+            t.set_text('')
         for c in circles:
             c.center = (-100, -100)  # hide off-screen
-        return circles + [time_text, pulling_force_text, damp_force_text]
+        return circles + texts
 
 
     def next_frame(ix_frame):
@@ -108,30 +111,29 @@ def animate_with_live_integration(
             pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
             damp_force_text.set_text('Fd = ' + str(c.damp_accelerations))
         except AttributeError: pass
-        facecolor = 'green'
-        # TODO paint floor black, sled green, etc
+##        facecolor = 'green'
         for i, circle in zip(xrange(init_container.num_particles), circles):
             circle.center = (posns[i][0], posns[i][1])  # x and y
-            circle.set_facecolor(facecolor)
+##            circle.set_facecolor(facecolor)
         try:
             for ix, force_mag in zip(sim_wide_params.anchor_ixs, c.anchor_accels):
                 anchor_circle = circles[ix]
                 anchor_circle.set_facecolor('black')
-                alpha = force_mag / 50.0 + 0.1  # always > 0 so visible
+                alpha = min(force_mag / 100.0 + 0.01, 1)  # always > 0 so visible
                 anchor_circle.set_alpha(alpha)
         except AttributeError: pass
         return circles + [time_text, pulling_force_text, damp_force_text]
 
     # Amount of framedata to keep around for saving movies.
     save_count = 5000  # should be enough for animation to be able to save entire movie, if desired, without having to re-run
-    anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, init_func=init, save_count=save_count)
+    anim = FuncAnimation(fig, next_frame,
+            interval=dt, blit=True, init_func=init, save_count=save_count)
     if show_animation:
         pl.show()
     else:
         pl.close()
 
-    end_container = containers[-1]
-
+##    end_container = containers[-1]
 ##    # Now run... backwards!
 ##    if also_run_backwards:
 ##        for i in xrange(num_forward_frames):
@@ -147,7 +149,11 @@ def animate_with_live_integration(
             # If we haven't run/showed yet, we need to have the animation know how many frames to run for
             anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
         print 'beginning save of animation with frame count:',   num_total_frames
-        anim.save('{}/anim/{}.avi'.format(working_directory, info_for_naming), **anim_save_kwargs)
+        prefix = '{wd}/dumps/{name}'.format(wd = working_directory,
+                name = info_for_naming)
+        make_dirs_if_necessary(prefix)
+        anim.save('{pre}/anim len={len}.avi'.format(
+                pre=prefix, len=num_total_frames), **anim_save_kwargs)
         try:
             pl.close()
         except:
