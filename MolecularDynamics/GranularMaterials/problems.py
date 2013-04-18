@@ -5,7 +5,7 @@
 #!/usr/bin/env python
 from __future__ import division
 import numpy as np
-# import matplotlib as pl
+import matplotlib.pylab as pl
 import math
 # from scipy.spatial import KDTree
 ##import unittest
@@ -51,16 +51,60 @@ class SimStats(object):
         # Flux stuff
         self.cumulative_grains_below_aperture = np.cumsum(self.grains_below_aperture)
 
+    def get_path_prefix(self):
+        pre = 'dumps/' + self.info_for_naming + '/'
+        make_dirs_if_necessary(pre)
+        return pre
 
     def write_csvs(self, take_every=1):
-        pre = 'dumps/' + self.info_for_naming + '/'  # path prefix
-        make_dirs_if_necessary(pre)
+        pre = self.get_path_prefix()
         for func, fname in zip(
                 [self.anchor_csv_iter, self.flux_csv_iter],
                 ['anchor_accels.csv', 'grain_count.csv']):
             with open(pre + fname, 'w') as f:
                 for line in func(take_every):
                     f.write(line + '\n')
+
+    def write_plots(self, take_every=1, show=False):
+        pre = self.get_path_prefix()
+        yvar = self.cumulative_grains_below_aperture
+        # KLUDGE isn't there a way to find ix of first non-neg value in array?
+        for start_ix, yvalue in enumerate(yvar):
+            if yvalue > 0: break
+        take_ixs = range(start_ix, len(yvar), take_every)
+        if len(take_ixs) < 2:
+            print "I'm not going to plot flux because I have < 2 data points."
+            return
+        x = self.times[take_ixs]
+        y = yvar[take_ixs]
+        slope, yint = np.polyfit(x, y, deg=1)
+        print 'fit is: {m}*x + {b}'.format(m=slope, b=yint)
+
+        defaults = {'markersize':1, 'linewidth':0.1}
+        fig = pl.figure()
+
+        pl.plot(x, y, 'o',
+                color='black', **defaults)
+
+        fit_xs = np.array(pl.xlim())
+        pl.plot(fit_xs, slope * fit_xs + yint,
+                color='black', alpha=0.3, linewidth=1)
+
+        pl.ylabel('Cumulative grains through aperture')
+        pl.xlabel('Time')
+        pl.title('Accumulation of grains vs time')
+
+        pl.annotate('$Slope={:.1f}$'.format(slope),
+            xy=(0.1, 0.9), xycoords='axes fraction', fontsize=14)
+##        # Sim info:
+##        pl.ylim(ymin=-2)  # make room for it
+##        pl.annotate(info_for_naming, xy=(0.01, 0.03), xycoords='axes fraction', fontsize=12)
+        pl.savefig('{}flux.png'.format(pre))
+        pl.savefig('{}flux.svg'.format(pre))  # can take a while if complex plot
+        if show:
+            pl.show()
+        else:
+            pl.close()
 
     def flux_csv_iter(self, take_every=1):
         print 'fluxish hist', np.histogram(self.cumulative_grains_below_aperture)
@@ -148,12 +192,13 @@ class LJRepulsiveAndDampingForce(moldyn.Force):
         return accelerations
 
 
-def hourglass(funnel_width, hole_width, d_angle_from_horizon_to_wall, dist_between_anchors, diam, **kwargs_ignore):
+def hourglass(funnel_width, hole_width, d_angle_from_horizon_to_wall, dist_between_anchors, diam, grain_height, **kwargs_ignore):
     """ Make a container with "anchor" particles set up as walls of an hourglass
     :param kwargs_ignore: ignored extra args so you can use an exploded dictionary (**myargdict) for arg input
     :param diam: diameter of each grain and anchor
     :returns: container, y_funnel_bottom
     """
+    # Do calculations for funnel
     r_angle = math.radians(d_angle_from_horizon_to_wall)
     tan_over_2 = math.tan(r_angle)/2.0
     height_funnel = funnel_width * tan_over_2
@@ -184,16 +229,31 @@ def hourglass(funnel_width, hole_width, d_angle_from_horizon_to_wall, dist_betwe
     yls = get_anchor_centers(extra_funnel_extension, y_funnel_bottom, ydist, False)
 
     # Place anchors
+    # NOTE: the order of adding matters when plotting anchor forces, so try to add from left to right
     c = Container()
+
+    # Make side walls/anchors
+    # NOTE: The anchors at y = 0 are placed by other code
+    wall_ys = np.arange(diam, grain_height + diam, diam)
+    for y in reversed(wall_ys):  # high to low
+        c.add_particle([0, y])
+
     def add_anchors(xs, ys):
         for x, y in zip(xs, ys):
             c.add_particle([x, y])
     add_anchors(xls, yls)
     add_anchors(xrs, yrs)
-    return c, y_funnel_bottom
 
+    # KLUDGE repeating sucks, but I want the anchor ixs in the right order
+    for y in wall_ys:  # low to high
+        c.add_particle([funnel_width, y])
 
-def add_sand(container, width, height, dx, dy):
-    moldyn.add_triangle_lattice(container, (0, width), (1, height+1), dx, dy)
-    return container
+    anchor_ixs = range(c.num_particles)
+
+    # Finally, add sand
+    moldyn.add_triangle_lattice(c,
+            (diam, funnel_width-diam),
+            (diam, grain_height),
+            diam, diam)
+    return c, y_funnel_bottom, anchor_ixs
 

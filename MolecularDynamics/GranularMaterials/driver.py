@@ -5,7 +5,7 @@
 #!/usr/bin/env python
 from __future__ import division
 import numpy as np
-import matplotlib as pl
+import matplotlib.pylab as pl
 import math
 ##from scipy.spatial import KDTree
 ##import unittest
@@ -14,6 +14,7 @@ import math
 ##from collections import defaultdict#, namedtuple
 ##from matplotlib.animation import FuncAnimation  # v1.1+
 import timeit
+import time
 import cPickle as pickle
 
 from patku_sim import Container, VerletIntegrator, moldyn, graphical
@@ -26,8 +27,8 @@ show_animation = False
 save_animation = True  # can't show and save, for some reason (TkError)
 particle_radius = 0.5*2**(1.0/6)
 diam = 2*particle_radius
-frame_show_modulus = 5  # only show every nth frame
-figheight = 6  # for animation only
+frame_show_modulus = 3  # only show every nth frame
+figheight = 8  # for animation only
 num_frames_to_bootstrap = 1
 
 dt = 1e-2
@@ -37,13 +38,14 @@ p = Struct(name='Sand Sim parameters',
     diam = diam,
     dump_data = True,
     data_dump_modulus = 10,  # only save every nth container's value
-    gravity_magnitude = 3,
+    gravity_magnitude = 2,
     viscous_damping_magnitude = -10,
     funnel_width = 10*diam,  # leads to odd spacing for various angles
-    hole_width = [0, 1.5*diam],
+    hole_width = np.array([0]) * diam,
     d_angle_from_horizon_to_wall = [15, 30, 45, 60],  # d for degrees
     dist_between_anchors = diam,
-    num_grains = 100  # not exact though, due to packing
+    grain_height = 30
+##    num_grains = 10  # not exact though, due to packing
 )
 
 class RunFunc():
@@ -52,42 +54,39 @@ class RunFunc():
 
     def __call__(self, container):
 ##        return False
-        return container.time < 1
-        count = np.sum(container.positions < self.sim_wide_params.y_funnel_bottom)
-##        print count, 'grains thru the hole'
-        return count < p.num_grains and container.time < 50  # failsafe
+        return container.time < 30
 
 
 def params_tostring(self):
     hw = self.hole_width / self.diam  # print hole width proportional to d
-    return 'hw={hw:.2f}d angle={d_angle_from_horizon_to_wall} grains={num_grains} g={gravity_magnitude:.1f} damp={viscous_damping_magnitude} dt={dt:.2f}'.format(hw=hw, **self.__dict__)
+    return 'hw={hw:.1f}d grain_h={grain_height} g={gravity_magnitude:.1f} damp={viscous_damping_magnitude} dt={dt:.2f}/angle={d_angle_from_horizon_to_wall}'.format(hw=hw, **self.__dict__)
 
 lstats = []  # list of stats
 
 
 
-
+def time_now():
+    return time.strftime("%a %b %d %H:%M:%S")
 
 def run(neighbor_facilitator = None):
     global containers, lstats, p
     lj_method = 'dm' if neighbor_facilitator is None else 'nl'  # LJ method used either distance matrix or neighbor list
     info_for_naming = params_tostring(p)
 
+    header = "Starting at {t}".format(t=time_now())
+    print header
+    print '-'*len(header)
     print 'running with', info_for_naming
 
-    init_container, p.y_funnel_bottom = problems.hourglass(**p.__dict__)
-
-    p.anchor_ixs = range(init_container.num_particles)
-
-    packing_factor = 1.25  # educated guess as to how many particles fit into a unit area
-    p.sand_height = p.num_grains * packing_factor / p.funnel_width
-    problems.add_sand(init_container, p.funnel_width, p.sand_height, p.diam, p.diam)
-    print 'num grains expected/actual =', p.num_grains, '/', (init_container.num_particles - len(p.anchor_ixs))
+    init_container, p.y_funnel_bottom, p.anchor_ixs = problems.hourglass(**p.__dict__)
 
     # Boundary so particles keep recirculating
     # Need to have enough x space that grains and anchors don't init on top of each other
-    init_container.bounds = [(-0.1, p.funnel_width + 0.1),
-            (p.y_funnel_bottom - p.diam, p.sand_height + p.diam)]
+    posns = init_container.positions
+    xl, yb = np.min(posns, axis=0)  # left, bottom
+    xr, yt = np.max(posns, axis=0)  # right, top
+    init_container.bounds = [(xl - p.diam, xr + p.diam),
+            (yb - p.diam, yt + p.diam)]
 
     forces = [
         problems.GravityForce(g = p.gravity_magnitude),
@@ -100,8 +99,8 @@ def run(neighbor_facilitator = None):
     h = distance(*ylim)
     a_ratio = w / h
     # figsize must be integers or animation will error saving to file!
-    figheight = int(figheight)
-    figsize = (int(a_ratio * figheight)+1, figheight)
+    fh = int(figheight)
+    figsize = (int(a_ratio * fh)+1, fh)
 
     containers = [init_container]
 
@@ -128,6 +127,7 @@ def run(neighbor_facilitator = None):
 
     if p.dump_data:
         stats.write_csvs(p.data_dump_modulus)
+        stats.write_plots(p.data_dump_modulus, show=False)
     # graphical.plot_sand(stats.times, stats.???, gravity_magnitude=stats.gravity_magnitude, info_for_naming=info_for_naming, show=False)
 
     print 'all params:', p

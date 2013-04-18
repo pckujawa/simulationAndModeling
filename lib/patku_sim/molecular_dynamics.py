@@ -152,6 +152,7 @@ def lennardJonesForce(distance_matrices,
     dr[np.diag_indices_from(dr)] = 1
 
     if np.any(dr == 0):
+        print 'ixs of zero values:', sum(dr == 0)
         raise RuntimeError("The distance between some particles is zero. That's bad.")
 
     # If we're using sparse matrices, the radius and epsilon can't be floats because division by spm isn't supported. So turn them into spms.
@@ -500,7 +501,8 @@ class VerletIntegrator(object):
             if kes is None:
                 kes = np.zeros_like(new_vxs)
             kes += 0.5 * new_vxs**2  # mass is 1
-        c_next.set_velocities(np.array(lVxs))
+        vs = np.array(lVxs)
+        c_next.set_velocities(vs)
         c_next.kinetic_energies = kes
         return c_next
 

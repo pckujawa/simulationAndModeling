@@ -1,4 +1,8 @@
-data = read.csv('anchor_accels.csv', header=T)
+fpath = 'anchor_accels.csv'
+fpath = '../dumps/hw=0.0d grain_h=30 g=2.0 damp=-10 dt=0.01/angle=15/anchor_accels_funky_ixs.csv'
+
+
+data = read.csv(fpath, header=T)
 x = data
 maxTime = max(x$time)
 # x$ix = factor(x$ix)  # stringifies, FYI
@@ -16,6 +20,7 @@ x$ix[x$value > 100]
 # summary(gs[[1]]$value)
 # sd(gs[[1]]$value)
 
+# Smaller plot margins
 b = 2.5; t = 1
 l = b; r = t
 par(mar=c(b, l, t, r))

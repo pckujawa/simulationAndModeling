@@ -14,6 +14,7 @@ import pylab as pl
 from matplotlib.animation import FuncAnimation  # v1.1+
 import os
 import textwrap
+import time
 from libs import make_dirs_if_necessary
 
 working_directory = os.getcwd()
@@ -148,12 +149,13 @@ def animate_with_live_integration(
         if not show_animation:
             # If we haven't run/showed yet, we need to have the animation know how many frames to run for
             anim = FuncAnimation(fig, next_frame, interval=dt, blit=True, frames=num_total_frames)
-        print 'beginning save of animation with frame count:',   num_total_frames
+        print 'beginning save of animation with frame count:',   num_total_frames, 'at', time.strftime("%a %b %d %H:%M:%S")
         prefix = '{wd}/dumps/{name}'.format(wd = working_directory,
                 name = info_for_naming)
         make_dirs_if_necessary(prefix)
         anim.save('{pre}/anim len={len}.avi'.format(
                 pre=prefix, len=num_total_frames), **anim_save_kwargs)
+        print 'done saving at', time.strftime("%a %b %d %H:%M:%S")
         try:
             pl.close()
         except:
