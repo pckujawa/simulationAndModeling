@@ -140,7 +140,13 @@ def lennardJonesForce(distance_matrices,
     if anchor_ixs is not None:
         # How can we make sure anchors' effects aren't felt on other anchors?
 ##        assert dr[:, anchor_ixs][anchor_ixs].shape == tuple([len(anchor_ixs)]*2)
-        dr[:, anchor_ixs][anchor_ixs] = 1e10  # far enough away to have insignificant effect
+        copy = ixs_not_touching[:, anchor_ixs]
+        copy[anchor_ixs] = True
+        ixs_not_touching[:, anchor_ixs] = copy
+##        assert np.all(ixs_not_touching[:, anchor_ixs][anchor_ixs])
+##        copy = dr[:, anchor_ixs]
+##        copy[anchor_ixs] = 1e2  # far enough away to have insignificant effect
+##        dr[:, anchor_ixs] = copy
 
     # Eliminate zeros on diagonal
     dr[np.diag_indices_from(dr)] = 1
@@ -247,6 +253,17 @@ class SledForcer(object):
 class Container(object):
     def __init__(self, bounds=None):
         self.bounds = bounds
+        try:
+            # Set up readonly props for Lx, Ly, Lz
+            ##>>> Container([(0, 1)]).Lx
+            ##1
+            ##>>> Container([(0, 1)]).Lx0
+            ##0
+            for b, dim in zip(bounds, ['x', 'y', 'z']):
+                # items are tuple/list of min, max
+                setattr(type(self), 'L'+dim+'0', property(fget = lambda self: b[0]))
+                setattr(type(self), 'L'+dim, property(fget = lambda self: b[1]))
+        except TypeError: pass  # can't iterate if None
         self._positions = []
         self._velocities = []
         self._accelerations = []

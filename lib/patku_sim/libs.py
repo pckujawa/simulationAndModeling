@@ -12,6 +12,18 @@ import unittest
 import itertools
 from pprint import pprint, pformat
 from collections import defaultdict, namedtuple
+import os
+
+def make_dirs_if_necessary(path):
+    if not os.path.exists(path):
+        os.makedirs(path)
+
+
+def distance(x1, x2):
+    """ Distance between two scalars, taking signs into account
+    """
+    return abs(max(x1, x2) - min(x1, x2))
+
 
 # http://stackoverflow.com/questions/312443/how-do-you-split-a-list-into-evenly-sized-chunks-in-python
 def chunk_iter(l, n, strict=False):
