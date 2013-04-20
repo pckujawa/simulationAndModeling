@@ -25,12 +25,13 @@ class SimStats(object):
     def __init__(self, info_for_naming, containers, sim_wide_params,
             **attributes):
         self.info_for_naming = info_for_naming
+        self.num_containers = len(containers)
         self.sim_wide_params = sim_wide_params
         self.__dict__.update(attributes)
         # Set up multi-dim data columns
         c0 = containers[0]
         y_hole = sim_wide_params.y_funnel_bottom
-        y_bottom_pbc = c0.Ly0
+##        y_bottom_pbc = c0.Ly0  # ! might not have PBC
 ##        flux_height = distance(y_bottom_pbc, sim_wide_params.y_funnel_bottom)
 
         self.cols_1d = ['times', 'grains_below_aperture']#, 'flux']
@@ -52,7 +53,8 @@ class SimStats(object):
         self.cumulative_grains_below_aperture = np.cumsum(self.grains_below_aperture)
 
     def get_path_prefix(self):
-        pre = 'dumps/' + self.info_for_naming + '/'
+        pre = 'dumps/{info}/{n}/'.format(
+                info=self.info_for_naming, n=self.num_containers)
         make_dirs_if_necessary(pre)
         return pre
 
@@ -136,12 +138,37 @@ class SimStats(object):
                 {k:v for k,v in self.__dict__.iteritems() if k in keep})
 
 
+class FakeStatsForce(moldyn.Force):
+    """ KLUDGE to figure out stats
+    """
+    name = 'Fake force for collecting stats'
+##    attrs_to_copy = ['cumulative_grains_below_aperture', 'ixs_below_aperture']  # could mutate the container, but that's rude, so indicate here what attributes to copy from this force to the container
+
+    def __call__(self, container, sim_wide_params):
+        # Create stuff to store in container
+        p = sim_wide_params
+        y_hole = p.y_funnel_bottom
+        ixs = container.ixs_below_aperture
+        before = len(ixs)
+        ix_mask = container.positions[:, 1] < y_hole# and container.positions > (y_hole - p.diam)
+        ixs = ix_mask.nonzero()[0]
+        container.ixs_below_aperture = ixs
+        after = len(ixs)
+        diff_grains_below_aperture = after - before
+        container.cumulative_grains_below_aperture += diff_grains_below_aperture  # attr should have been init'd in integrator.step
+
+        # Return zeros for accels so we don't affect anything
+        num_dims = len(container.dims_iter())
+        return np.zeros(shape=(container.num_particles, num_dims))
+
+
 class GravityForce(moldyn.Force):
     name = 'Gravity'
     def __init__(self, g=3):
         self.g = g
 
     def __call__(self, container, sim_wide_params):
+        p = sim_wide_params
         # Only affect y acceleration
         axs = np.zeros(container.num_particles)
         ays = np.repeat(-self.g, container.num_particles)
@@ -150,7 +177,17 @@ class GravityForce(moldyn.Force):
             all_as = np.array([axs, ays, azs]).transpose()
         else:
             all_as = np.array([axs, ays]).transpose()
-        all_as[sim_wide_params.anchor_ixs] = 0
+
+        # Don't accelerate anchors or grains off screen
+        about_far_enough = 10
+        too_far_below_ix_mask = container.positions[:, 1] < (
+                p.y_funnel_bottom - about_far_enough)
+        too_far_below_ixs = too_far_below_ix_mask.nonzero()[0]
+##        if container.time > 5:
+##            print 'too_far_below_ixs:', too_far_below_ixs
+        all_as[too_far_below_ixs] = 0
+        all_as[p.anchor_ixs] = 0
+        assert all_as.ndim > 1  # make sure we didn't change shape somehow
         return all_as
 
 

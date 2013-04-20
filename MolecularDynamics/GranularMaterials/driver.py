@@ -36,15 +36,16 @@ p = Struct(name='Sand Sim parameters',
     # repeats are stored here for easier access inside various functions
     dt = dt,
     diam = diam,
-    dump_data = True,
+    dump_data = not show_animation,
+    use_bounds = False,
     data_dump_modulus = 10,  # only save every nth container's value
     gravity_magnitude = 2,
     viscous_damping_magnitude = -10,
-    funnel_width = 10*diam,  # leads to odd spacing for various angles
-    hole_width = np.array([0]) * diam,
-    d_angle_from_horizon_to_wall = [15, 30, 45, 60],  # d for degrees
+    funnel_width = 20*diam,  # leads to odd spacing for various angles
+    hole_width = np.array([1.5]) * diam,  # ===============
+    d_angle_from_horizon_to_wall = [15],  # d for degrees
     dist_between_anchors = diam,
-    grain_height = 30
+    grain_height = 20
 ##    num_grains = 10  # not exact though, due to packing
 )
 
@@ -54,7 +55,17 @@ class RunFunc():
 
     def __call__(self, container):
 ##        return False
-        return container.time < 30
+        # Avoid container not having correct attributes by just always skipping a few time steps
+        p = self.sim_wide_params
+        if container.time < dt:  # ================
+            return True
+        if container.cumulative_grains_below_aperture < p.num_grains:
+            self.checkpoint_time = container.time
+            return container.time < 30  # failsafe
+        else:
+            # at this point, checkpoint will never be updated again
+            return container.time < self.checkpoint_time + 1
+
 
 
 def params_tostring(self):
@@ -78,23 +89,29 @@ def run(neighbor_facilitator = None):
     print '-'*len(header)
     print 'running with', info_for_naming
 
-    init_container, p.y_funnel_bottom, p.anchor_ixs = problems.hourglass(**p.__dict__)
+    # Get the initial problem container and meta
+    init_container, p.y_funnel_bottom, p.anchor_ixs = \
+            problems.hourglass(**p.__dict__)
+    p.num_grains = init_container.num_particles - len(p.anchor_ixs)
+
 
     # Boundary so particles keep recirculating
     # Need to have enough x space that grains and anchors don't init on top of each other
     posns = init_container.positions
     xl, yb = np.min(posns, axis=0)  # left, bottom
     xr, yt = np.max(posns, axis=0)  # right, top
-    init_container.bounds = [(xl - p.diam, xr + p.diam),
-            (yb - p.diam, yt + p.diam)]
+    xlim, ylim = [(xl - p.diam, xr + p.diam),
+                (yb - 2*p.diam, yt + p.diam)]
+    if p.use_bounds:
+        init_container.bounds = [xlim, ylim]
 
     forces = [
-        problems.GravityForce(g = p.gravity_magnitude),
-        problems.LJRepulsiveAndDampingForce(cutoff_dist = p.diam,
+        problems.GravityForce(g = p.gravity_magnitude)
+        , problems.LJRepulsiveAndDampingForce(cutoff_dist = p.diam,
                 viscous_damping_magnitude = p.viscous_damping_magnitude)
+        , problems.FakeStatsForce()
     ]
 
-    xlim, ylim = init_container.bounds
     w = distance(*xlim)
     h = distance(*ylim)
     a_ratio = w / h
@@ -110,17 +127,13 @@ def run(neighbor_facilitator = None):
 
     run_func = RunFunc(p)
 
-    try:
-        graphical.animate_with_live_integration(
-            containers, integrator, dt, xlim, ylim, figsize,
-            particle_radius, frame_show_modulus,
-            num_frames_to_bootstrap, info_for_naming,
-            save_animation, show_animation, run_func,
-            anim_save_kwargs = anim_save_kwargs,
-            sim_wide_params = p)
-    except AttributeError as e:
-        print e
-        print "Can't save animation after showing it when in a Tk python session, but we get this error"
+    graphical.animate_with_live_integration(
+        containers, integrator, dt, xlim, ylim, figsize,
+        particle_radius, frame_show_modulus,
+        num_frames_to_bootstrap, info_for_naming,
+        save_animation, show_animation, run_func,
+        anim_save_kwargs = anim_save_kwargs,
+        sim_wide_params = p)
 
     stats = problems.SimStats(info_for_naming, containers, p)
     lstats.append(stats)
@@ -145,14 +158,28 @@ def main():
 
 angles = p.d_angle_from_horizon_to_wall
 holes = p.hole_width
-try:
-    for angle in angles:
-        p.d_angle_from_horizon_to_wall = angle
-        try:
-            for hw in holes:
-                p.hole_width = hw
-                main()
-        except TypeError:
-            main()
-except TypeError:
-    main()
+for angle in angles:
+    p.d_angle_from_horizon_to_wall = angle
+    for hw in holes:
+        p.hole_width = hw
+        main()
+##
+##started = False
+##try:
+##    for angle in angles:
+##        p.d_angle_from_horizon_to_wall = angle
+##        try:
+##            for hw in holes:
+##                started = True
+##                p.hole_width = hw
+##                main()
+##        except TypeError as e:# if 'iterator' in e.message:
+##            print e
+##            if not started:
+##                started = True
+##                main()
+##except TypeError as e:
+##    print e
+##    if not started:
+##        started = True
+##        main()

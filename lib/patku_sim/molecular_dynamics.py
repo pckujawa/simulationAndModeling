@@ -471,26 +471,36 @@ class VerletIntegrator(object):
         # KLUDGE copying attributes should be handled in Container to prevent inconsistencies
         c_next.time = c.time + dt
         c_next.num_particles = c.num_particles
-        try:
-            c_next.floor_particle_ixs = c.floor_particle_ixs
-            c_next.sled_particle_ixs = c.sled_particle_ixs
-        except AttributeError:
-            pass
+        attrs_to_copy = {  # and default values
+            'cumulative_grains_below_aperture': 0
+            , 'ixs_below_aperture': []
+            , 'floor_particle_ixs': []
+            , 'sled_particle_ixs': []}
+        for attr, default_val in attrs_to_copy.iteritems():
+            try:
+                if default_val is not None:
+                    value = getattr(c, attr, default_val)
+                else:
+                    value = getattr(c, attr)  # throws (and doesn't create attribute at all)
+                setattr(c_next, attr, value)
+            except AttributeError: pass
+
+        # Helper to get the next positions
         def _posn_iter():
             for xs, vxs, axs in zip(c.positions, c.velocities, c_accelerations):
-                yield xs + vxs*dt + 0.5*axs*dt**2
+                yield xs + vxs*dt + 0.5*axs*dt**2  # Verlet algorithm
         new_posns = list(_posn_iter())
 
         # Need to hold on to previous velocities
         c_next.set_positions_velocities_accelerations(
             np.array(new_posns), c_velocities)
-        try:
-            c_next.apply_force(self.forces, sim_wide_params = self.sim_wide_params)
-        except AttributeError:
-            try:
-                c_next.apply_force(self.sled_forcer, self.neighbor_facilitator)
-            except AttributeError:
-                c_next.apply_force()
+##        try:
+        c_next.apply_force(self.forces, sim_wide_params = self.sim_wide_params)
+##        except AttributeError:
+##            try:
+##                c_next.apply_force(self.sled_forcer, self.neighbor_facilitator)
+##            except AttributeError:
+##                c_next.apply_force()
         kes = None  # Kinetic Energy
         lVxs = []  # l=list; store vxs values
         for xs, vxs, axs, axs_prev in zip(

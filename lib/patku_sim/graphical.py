@@ -6,7 +6,7 @@
 from __future__ import division
 import numpy as np
 import pylab as pl
-##import math
+import math
 ##import unittest
 ##import itertools
 ##from pprint import pprint, pformat
@@ -20,7 +20,7 @@ from libs import make_dirs_if_necessary
 working_directory = os.getcwd()
 
 # Circle code courtesy of Kevin Joyce
-def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="tan", alpha=0.6, ax=None):
+def get_nice_circle(x, y, radius, color="black", facecolor="tan", alpha=0.6, ax=None):
     """ add a circle to ax or current axes
     """
     e = pl.Circle([x, y], radius)
@@ -29,7 +29,7 @@ def get_nice_circle(x, y, radius, color="lightsteelblue", facecolor="tan", alpha
     ax.add_artist(e)
     e.set_clip_box(ax.bbox)
     e.set_edgecolor( color )
-    e.set_linewidth(1)
+    e.set_linewidth(0)
     e.set_facecolor( facecolor )  # "none" not None
     e.set_alpha( alpha )
     return e
@@ -76,7 +76,13 @@ def animate_with_live_integration(
     for i in xrange(init_container.num_particles):
         e = get_nice_circle(0, 0, particle_radius)
         circles.append(ax.add_patch(e))
-    time_text = ax.text(0.02, 0.90, '', transform=ax.transAxes)
+
+    # NOTE: We can animate an annotations, but not using textcoords='figure points'
+    multi_text = ax.annotate('stats', (0, 0),
+            xytext=(5, 5), textcoords='axes points',
+            ha='left', va='bottom')
+    time_text = ax.text(0, -2, 'time', transform=ax.transAxes)
+    flux_text = ax.text(0.5, -2, 'flux', transform=ax.transAxes)
     pulling_force_text = ax.text(0.5, 0.90, '', transform=ax.transAxes)
     damp_force_text = ax.text(0.5, 0.80, '', transform=ax.transAxes)
 ##    aperture_line = ax.plot(xlim, [sim_wide_params.y_funnel_bottom]*2,
@@ -84,9 +90,9 @@ def animate_with_live_integration(
 ##            linewidth=0.5)
 
     # init fn seems to prevent 'ghosting' of first-plotted data
+    texts = [multi_text, time_text, flux_text, pulling_force_text, damp_force_text]
     def init():
         """initialize animation"""
-        texts = [time_text, pulling_force_text, damp_force_text]
         for t in texts:
             t.set_text('')
         for c in circles:
@@ -108,29 +114,37 @@ def animate_with_live_integration(
         c = containers[container_ix]
         posns = c.positions
         try:
-            time_text.set_text('time = %.1f' % c.time)
+            stats = 'time={t:.1f}\ncount={n}'.format(
+                    t = c.time, n = c.cumulative_grains_below_aperture)
+            multi_text.set_text(stats)
+##            time_text.set_text('time = %.1f' % c.time)
+##            flux_text.set_text('count = {}'.format(c.cumulative_grains_below_aperture))
             pulling_force_text.set_text('Fp = ' + str(c.pull_accelerations))
             damp_force_text.set_text('Fd = ' + str(c.damp_accelerations))
         except AttributeError: pass
-##        facecolor = 'green'
         for i, circle in zip(xrange(init_container.num_particles), circles):
             circle.center = (posns[i][0], posns[i][1])  # x and y
-##            circle.set_facecolor(facecolor)
         try:
             for ix, force_mag in zip(sim_wide_params.anchor_ixs, c.anchor_accels):
                 anchor_circle = circles[ix]
                 anchor_circle.set_facecolor('black')
-                alpha = min(force_mag / 100.0 + 0.01, 1)  # always > 0 so visible
+                # Consider using logarithm
+                max_expected_force = 1000
+                alpha = min(math.log(force_mag + 2, max_expected_force), 1)  # always > 0.1 so visible; cap at 100%
+##                alpha = min(force_mag/100.0 + 0.01, 1)
                 anchor_circle.set_alpha(alpha)
         except AttributeError: pass
-        return circles + [time_text, pulling_force_text, damp_force_text]
+        return circles + texts
 
     # Amount of framedata to keep around for saving movies.
     save_count = 5000  # should be enough for animation to be able to save entire movie, if desired, without having to re-run
     anim = FuncAnimation(fig, next_frame,
             interval=dt, blit=True, init_func=init, save_count=save_count)
     if show_animation:
-        pl.show()
+        try:
+            pl.show()
+        except AttributeError as e:  # 'NoneType' object has no attribute 'tk'
+            print e
     else:
         pl.close()
 
