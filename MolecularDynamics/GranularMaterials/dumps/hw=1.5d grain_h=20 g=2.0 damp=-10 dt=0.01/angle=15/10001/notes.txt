@@ -1,0 +1,1 @@
+I don't see very good evidence at 15 deg that force is ind of depth. The flux plot clearly is nonlinear, although the boxplots could arguably represent uniform force on funnel anchors.

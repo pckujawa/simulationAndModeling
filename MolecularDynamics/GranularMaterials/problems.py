@@ -20,6 +20,7 @@ import os
 from patku_sim import Container, moldyn#, graphical, VerletIntegrator,
 from patku_sim.libs import Struct, distance, make_dirs_if_necessary
 
+working_dir = os.getcwdu()  # to cache
 
 class SimStats(object):
     def __init__(self, info_for_naming, containers, sim_wide_params,
@@ -34,7 +35,7 @@ class SimStats(object):
 ##        y_bottom_pbc = c0.Ly0  # ! might not have PBC
 ##        flux_height = distance(y_bottom_pbc, sim_wide_params.y_funnel_bottom)
 
-        self.cols_1d = ['times', 'grains_below_aperture']#, 'flux']
+        self.cols_1d = ['times', 'grains_below_aperture', 'cumulative_grains_below_aperture']#, 'flux']
         # Some of the following columns are n-dimensional (e.g. accels would have a column for each anchor)
         self.cols_nd = ['anchor_accels']  # n-dim
         self.attr_names = self.cols_1d + self.cols_nd
@@ -43,17 +44,15 @@ class SimStats(object):
         for c in containers[1:]:  # first container usually has no useful information (and is missing attributes)
             self.times.append(c.time)
             self.anchor_accels.append(c.anchor_accels)
-            grains_below_aperture = sum(c.positions < y_hole)[1]  # only in y
-            self.grains_below_aperture.append(grains_below_aperture)
-##            self.flux.append(grains_below_aperture / flux_height)
+            self.cumulative_grains_below_aperture.append(
+                    c.cumulative_grains_below_aperture)
         for attr in self.attr_names:
             # convert to arrays
             setattr(self, attr, np.array(getattr(self, attr)))
-        # Flux stuff
-        self.cumulative_grains_below_aperture = np.cumsum(self.grains_below_aperture)
 
     def get_path_prefix(self):
-        pre = 'dumps/{info}/{n}/'.format(
+        pre = u'{wd}/dumps/{info}/{n}/'.format(
+                wd = working_dir,
                 info=self.info_for_naming, n=self.num_containers)
         make_dirs_if_necessary(pre)
         return pre
@@ -67,20 +66,26 @@ class SimStats(object):
                 for line in func(take_every):
                     f.write(line + '\n')
 
-    def write_plots(self, take_every=1, show=False):
-        pre = self.get_path_prefix()
+    def get_flux_xy(self, take_every=1):
         yvar = self.cumulative_grains_below_aperture
         # KLUDGE isn't there a way to find ix of first non-neg value in array?
         for start_ix, yvalue in enumerate(yvar):
             if yvalue > 0: break
-        take_ixs = range(start_ix, len(yvar), take_every)
+        # We don't want to include counts after the last grain has passed through because it will skew our line fit
+        end_ix = np.argmax(yvar)  # returns the *first* ix of largest value
+        take_ixs = range(start_ix, end_ix, take_every)
         if len(take_ixs) < 2:
-            print "I'm not going to plot flux because I have < 2 data points."
-            return
+            print "I'm not going to plot flux because I have < 2 nonzero data points."
+            return None
         x = self.times[take_ixs]
         y = yvar[take_ixs]
         slope, yint = np.polyfit(x, y, deg=1)
         print 'fit is: {m}*x + {b}'.format(m=slope, b=yint)
+        return x, y, slope, yint
+
+    def write_plots(self, take_every=1, show=False):
+        pre = self.get_path_prefix()
+        x, y, slope, yint = self.get_flux_xy(take_every)
 
         defaults = {'markersize':1, 'linewidth':0.1}
         fig = pl.figure()
@@ -97,7 +102,8 @@ class SimStats(object):
         pl.title('Accumulation of grains vs time')
 
         pl.annotate('$Slope={:.1f}$'.format(slope),
-            xy=(0.1, 0.9), xycoords='axes fraction', fontsize=14)
+            xy=(0.05, 0.95), xycoords='axes fraction', ha='left', va='top'
+            , fontsize=14)
 ##        # Sim info:
 ##        pl.ylim(ymin=-2)  # make room for it
 ##        pl.annotate(info_for_naming, xy=(0.01, 0.03), xycoords='axes fraction', fontsize=12)
@@ -111,10 +117,12 @@ class SimStats(object):
     def flux_csv_iter(self, take_every=1):
         print 'fluxish hist', np.histogram(self.cumulative_grains_below_aperture)
         yield ','.join(['time', 'cumulative_grains_below_aperture'])
-        for time_ix, time in enumerate(self.times):
-            if time_ix % take_every != 0:
-                continue
-            yield ','.join(str(a) for a in [time, self.cumulative_grains_below_aperture[time_ix]])
+        xs, ys, slope, yint = self.get_flux_xy(take_every)
+        yield '\n'.join(','.join(str(x) for x in a) for a in zip(xs, ys))
+##        for time_ix, time in enumerate(self.times):
+##            if time_ix % take_every != 0:
+##                continue
+##            yield ','.join(str(a) for a in [time, self.cumulative_grains_below_aperture[time_ix]])
 
     def anchor_csv_iter(self, take_every=1):
 ##        'time', 'ix', 'value'
@@ -150,11 +158,20 @@ class FakeStatsForce(moldyn.Force):
         y_hole = p.y_funnel_bottom
         ixs = container.ixs_below_aperture
         before = len(ixs)
-        ix_mask = container.positions[:, 1] < y_hole# and container.positions > (y_hole - p.diam)
+        ix_mask = container.positions[:, 1] < y_hole
+        if p.use_bounds:
+            # With PBC, we can't just track grains < y_hole
+            bset = set(ixs)
+            aset = set(ix_mask.nonzero()[0])
+##            ixs = list(bset + aset)  # only uniq additions
+            removed = bset - aset
+            after = len(removed)  # include removed ones in count
+        else:
+            after = 0
         ixs = ix_mask.nonzero()[0]
-        container.ixs_below_aperture = ixs
-        after = len(ixs)
+        after += len(ixs)
         diff_grains_below_aperture = after - before
+        container.ixs_below_aperture = ixs
         container.cumulative_grains_below_aperture += diff_grains_below_aperture  # attr should have been init'd in integrator.step
 
         # Return zeros for accels so we don't affect anything

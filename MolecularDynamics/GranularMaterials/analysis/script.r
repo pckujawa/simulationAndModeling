@@ -1,38 +1,17 @@
-## savePath is if you want to save as an image file. Requires opening a window.
-getSaveFunc = function(savePath, windowWidth=10, windowHeight=10) {
-    f = function() {}
-    if (is.null(savePath)) return(f)  # do nothing
-    require('stringr')  # for file extension parsing
-    windows(width=windowWidth, height=windowHeight)  # need to open new window in order to save
-    par(mgp=c(1.5, 0.5, 0))  # smaller margins for print/save, I think
-    endFunc = function() dev.off()  # close window when done
-    if (str_detect(savePath, ignore.case('svg$'))) {
-        f = function() {
-            dev.copy(svg, file=savePath)
-            endFunc()
-        }
-    } else {  # default is png
-        f = function () {
-            savePlot(filename=savePath, type='png')
-            endFunc()
-        }
-    }
-    return(f)
-    # fname=paste('images/', name, ' ', operationName, sep='')  # need to create 'images/' subfolder manually or R will error
-}
-
+source('lib.R')
 doAnchor = function(fpath, save=F) {
     data = read.csv(fpath, header=T)
     maxTime = max(data$time)
     
     # Smaller plot margins
-    b = 2.5; t = 1
+    b = 2.5; t = 2
     l = b; r = t
     par(mar=c(b, l, t, r))
     
-    windowWidths = c(maxTime, -1)
-    dataSets = list(data, subset(data, subset= time > maxTime-1))
-    for (ix in 1:2) {
+    windowWidths = c(toString(maxTime), '9<t<91')
+    dataSets = list(data
+                    , subset(data, subset= (time > 9) & (time < 91)))
+    for (ix in 1:length(dataSets)) {
         x = dataSets[[ix]]
         window = windowWidths[[ix]]
         gByIX = split(x, x$ix)  # over >1 time value
@@ -41,26 +20,29 @@ doAnchor = function(fpath, save=F) {
         statsPerIx = mapply(gByIX, FUN = function(df) summary(df$value))
         
         # Set up saving if chosen
+        imgPath = NULL
         if (save) {
-            imgPath = 'anchor forces boxplot angle=%i window=%.1f.png'
-            saveFunc = getSaveFunc(sprintf(imgPath, angle, window))
+            imgPath = 'anchor forces boxplot angle=%i window=%s.png'
+            imgPath = sprintf(imgPath, angle, window)
         }
+        saveFunc = getSaveFunc(imgPath)
         
         boxplot(statsPerIx)  # <-- What I want
+        title(sprintf('angle=%.0f window=%s', angle, window))
         saveFunc()
     }
 }
 
 anchorAngles = c(15, 30, 45, 60)
 anchorPathTemplate = 
-    '../dumps/hw=0.0d grain_h=30 g=2.0 damp=-10 dt=0.01/angle=%i/anchor_accels.csv'
+    '../dumps/hw=1.5d grain_h=20 g=2.0 damp=-10 dt=0.01/angle=%i/10001/anchor_accels.csv'
 cat('Starting anchor force analysis\n')
 for (angle in anchorAngles) {
     fpath = sprintf(anchorPathTemplate, angle)
     cat("angle =", angle, '\n')
-    doAnchor(fpath, save=T)
+    doAnchor(fpath, save=F)
 }
-
+stop("quit early")
 # fpath = '../dumps/hw=0.0d grain_h=30 g=2.0 damp=-10 dt=0.01/angle=15/anchor_accels_funky_ixs.csv'
 
 

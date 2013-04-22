@@ -24,10 +24,10 @@ import problems
 nice_image_codecs = ['libx264']  # keep everything sharp and aren't slow
 anim_save_kwargs = {'fps': 30, 'codec': nice_image_codecs[0]}
 show_animation = False
-save_animation = True  # can't show and save, for some reason (TkError)
+save_animation = True  # can't show and save, for some reason
 particle_radius = 0.5*2**(1.0/6)
 diam = 2*particle_radius
-frame_show_modulus = 3  # only show every nth frame
+frame_show_modulus = 5  # only show every nth frame
 figheight = 8  # for animation only
 num_frames_to_bootstrap = 1
 
@@ -37,15 +37,15 @@ p = Struct(name='Sand Sim parameters',
     dt = dt,
     diam = diam,
     dump_data = not show_animation,
-    use_bounds = False,
-    data_dump_modulus = 10,  # only save every nth container's value
+    use_bounds = True,
+    data_dump_modulus = 20,  # only save every nth container's value
     gravity_magnitude = 2,
     viscous_damping_magnitude = -10,
-    funnel_width = 20*diam,  # leads to odd spacing for various angles
-    hole_width = np.array([1.5]) * diam,  # ===============
-    d_angle_from_horizon_to_wall = [15],  # d for degrees
+    funnel_width = 11*diam,  # leads to odd spacing for various angles
+    hole_width = np.array([3]) * diam,  # ===============
+    d_angle_from_horizon_to_wall = [60],  # d for degrees
     dist_between_anchors = diam,
-    grain_height = 20
+    grain_height = 20  # 20 may be best all around  # 10 is good with fw=10d hw=1.5d angle=60
 ##    num_grains = 10  # not exact though, due to packing
 )
 
@@ -54,14 +54,17 @@ class RunFunc():
         self.sim_wide_params = sim_wide_params
 
     def __call__(self, container):
-##        return False
-        # Avoid container not having correct attributes by just always skipping a few time steps
+        if show_animation:
+            return False  # don't cache any frames, just show live
         p = self.sim_wide_params
-        if container.time < dt:  # ================
+        # Avoid container not having correct attributes by just always skipping a few time steps
+        if container.time < dt:
             return True
+        if p.use_bounds:
+            return container.time < 150
         if container.cumulative_grains_below_aperture < p.num_grains:
             self.checkpoint_time = container.time
-            return container.time < 30  # failsafe
+            return container.time < 120  # failsafe in case of blockage
         else:
             # at this point, checkpoint will never be updated again
             return container.time < self.checkpoint_time + 1
@@ -70,7 +73,8 @@ class RunFunc():
 
 def params_tostring(self):
     hw = self.hole_width / self.diam  # print hole width proportional to d
-    return 'hw={hw:.1f}d grain_h={grain_height} g={gravity_magnitude:.1f} damp={viscous_damping_magnitude} dt={dt:.2f}/angle={d_angle_from_horizon_to_wall}'.format(hw=hw, **self.__dict__)
+    bounded = 'PBC ' if p.use_bounds else ''
+    return 'hw={hw:.1f}d grain_h={grain_height} g={gravity_magnitude:.1f} damp={viscous_damping_magnitude} dt={dt:.2f}/{pbc}angle={d_angle_from_horizon_to_wall}'.format(hw=hw, pbc=bounded, **self.__dict__)
 
 lstats = []  # list of stats
 

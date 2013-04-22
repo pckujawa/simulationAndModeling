@@ -167,9 +167,12 @@ def animate_with_live_integration(
         prefix = '{wd}/dumps/{name}'.format(wd = working_directory,
                 name = info_for_naming)
         make_dirs_if_necessary(prefix)
-        anim.save('{pre}/anim len={len}.avi'.format(
-                pre=prefix, len=num_total_frames), **anim_save_kwargs)
-        print 'done saving at', time.strftime("%a %b %d %H:%M:%S")
+        try:
+            anim.save('{pre}/anim len={len}.avi'.format(
+                    pre=prefix, len=num_total_frames), **anim_save_kwargs)
+            print 'done saving at', time.strftime("%a %b %d %H:%M:%S")
+        except RuntimeError as e:  #Error writing to file
+            print e
         try:
             pl.close()
         except:
