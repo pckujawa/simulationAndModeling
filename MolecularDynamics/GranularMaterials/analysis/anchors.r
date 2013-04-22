@@ -1,4 +1,5 @@
 source('lib.R')
+
 doAnchor = function(fpath, save=F) {
     data = read.csv(fpath, header=T)
     maxTime = max(data$time)
@@ -33,7 +34,7 @@ doAnchor = function(fpath, save=F) {
     }
 }
 
-anchorAngles = c(15, 30, 45, 60)
+anchorAngles = c(15)
 anchorPathTemplate = 
     '../dumps/hw=1.5d grain_h=20 g=2.0 damp=-10 dt=0.01/angle=%i/10001/anchor_accels.csv'
 cat('Starting anchor force analysis\n')
@@ -42,6 +43,7 @@ for (angle in anchorAngles) {
     cat("angle =", angle, '\n')
     doAnchor(fpath, save=F)
 }
+
 stop("quit early")
 # fpath = '../dumps/hw=0.0d grain_h=30 g=2.0 damp=-10 dt=0.01/angle=15/anchor_accels_funky_ixs.csv'
 
