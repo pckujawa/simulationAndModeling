@@ -13,11 +13,12 @@ if version > '1.0.0':
 import numpy as np
 # import matplotlib.pyplot as pl
 
+enforce_pmp = True
 spy = 31557600.0  # sec/year = 60*60*24*365.25
-dt = 1e-1 * spy
-total_sim_time = 1e2*dt#1e-2 * spy
+dt = 1e3 * spy
+total_sim_time = 2e2*dt#1e-2 * spy
 ice_thickness = 1500.0
-temperature_0 = -10.0
+temperature_0 = 0#-10.0
 theta0_multiplier = 5.0
 u_mult = 20.0  # TODO np.linspace(20, 100, 10)  # h_coeff
 w_mult = 0.5  # TODO np.linspace(0.1, 0.5, 10)  # v_coeff
@@ -35,12 +36,20 @@ Cp = 2009.0  # J/(kg*K), Heat capacity
 g = 9.81  # m/s^2 accel due to gravity
 
 beta = 9.8e-8  # K/Pa, Pressure dependence of melting point
-theta_pmp = beta * rho * (z_s - z_b)  # deg C, Pressure melting point of ice at bed
+
+
+def theta_pmp(z_arr):
+    return beta * rho * g * (z_arr - z_s)  # deg C, Pressure melting point of ice
 
 # Create mesh and define function space
 mesh = Interval(mesh_node_count, z_b, z_s)
 # mesh.coordinates[:] *= ice_thickness
-print mesh.coordinates()
+node_coords = mesh.coordinates()
+print 'node_coords', node_coords
+theta_pmp_arr = theta_pmp(node_coords)
+theta_pmp_arr = theta_pmp_arr.reshape(theta_pmp_arr.size, )
+# NOTE: Need to reshape array to match nodes shape
+print 'theta_pmp_arr', theta_pmp_arr
 func_space = FunctionSpace(mesh, 'Lagrange', 1)
 
 # Define boundary conditions
@@ -71,9 +80,9 @@ print 'u_prime:', u_prime
 u = Expression('m * pow({s}, 4)/spy'.format(s=sigma),
                m=u_mult, spy=spy)  # m/annum, horiz ice velocity
 w_str = '-m*'+sigma+'/spy'
-if dolfin.__version__ > '1.0.0':
-    w_str = tuple(w_str)
-w = Expression(w_str, m=w_mult, spy=spy)  # m/annum, vertical ice velocity (needs to be a tuple to work with `inner`)
+if version > '1.0.0':
+    w_str = (w_str, )  # (needs to be a tuple to work with `inner`)
+w = Expression(w_str, m=w_mult, spy=spy)  # m/annum, vertical ice velocity
 phi = Expression('-p*g*(zs-x[0])*{du_dz}*dzs_dx'.format(du_dz=u_prime),
                  p=rho, g=g, zs=z_s, dzs_dx=surface_slope)  # W/m^3, heat sources from deformation of ice
 
@@ -83,12 +92,12 @@ neumann_bc = Qgeo/rho/Cp * dt * bed_boundary * v * ds
 
 diffusion_term = theta*v + \
     (k/rho/Cp) * inner(nabla_grad(theta), nabla_grad(v))*dt
-# Either of the following seem to work
+# Either of the following seem to work in v1.0.0
 # NOTE: Seems that we shouldn't negate w here
-# vertical_advection = inner(w, nabla_grad(theta)) * v * dt
-vertical_advection = w * nabla_grad(theta) * v * dt
-horiz_advection = -u * d_theta_dx * v * dt
-strain_heating = phi/rho/Cp * Expression(u_prime)/spy * v * dt
+vertical_advection = 0#inner(w, nabla_grad(theta)) * v * dt
+# vertical_advection = w * nabla_grad(theta) * v * dt  # doesn't work in v1.1.0
+horiz_advection = 0#-u * d_theta_dx * v * dt
+strain_heating = 0#phi/rho/Cp * Expression(u_prime)/spy * v * dt
 
 a = (diffusion_term + vertical_advection)*dx
 # L = (theta_1 - u*d_theta_dx*dt + phi/rho/Cp * dt)*v*dx + neumann_bc
@@ -107,6 +116,15 @@ while t <= total_sim_time:
     theta_0.t = t
     dirichlet_bc.apply(A, b)
     solve(A, theta.vector(), b)
+
+    # Keep temperatures within PMP
+    if enforce_pmp:
+        temp = theta.vector().array()
+        mask_ixs_gt_pmp = temp > theta_pmp_arr
+        if np.any(mask_ixs_gt_pmp):
+            print 'ixs_gt_pmp', np.where(mask_ixs_gt_pmp)
+        temp[mask_ixs_gt_pmp] = theta_pmp_arr[mask_ixs_gt_pmp]
+        theta.vector()[:] = temp
 
     plot(theta)  # transpose of the plot we want
     out_file << (theta, t)
