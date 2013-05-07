@@ -11,30 +11,42 @@ print 'dolfin version is', version
 if version > '1.0.0':
     Interval = IntervalMesh  # will this work?
 import numpy as np
+import sys
 # import matplotlib.pyplot as pl
-
-enforce_pmp = True
 spy = 31557600.0  # sec/year = 60*60*24*365.25
-dt = 1e3 * spy
-total_sim_time = 2e2*dt#1e-2 * spy
-ice_thickness = 1500.0
-temperature_0 = 0#-10.0
-theta0_multiplier = 5.0
+
+# Helpers for commandline (CLI) inputs
+argc = len(sys.argv) - 1
+def get_arg(ix, default_value, cast_type=float):
+    return cast_type(sys.argv[ix]) if argc > ix-1 else default_value
+
+print 'args: surface temp, dt [years], total time [years]'
+print ','.join(sys.argv)
+
+## Variables
+time_at_which_to_warm = 10e3 * spy  # after equilibrium, add warming
+do_warming = bool(time_at_which_to_warm)  # later changed/used as a signal
+temp_to_warm_to = 0.0
+enforce_pmp = True
+dt = get_arg(2, 1e3) * spy
+total_sim_time = get_arg(3, 1e2*dt/spy) * spy
+temperature_0 = get_arg(1, -10.0)  # constant added to sin function
+theta0_multiplier = 5.0  # multiplied by the sin function
 u_mult = 20.0  # TODO np.linspace(20, 100, 10)  # h_coeff
 w_mult = 0.5  # TODO np.linspace(0.1, 0.5, 10)  # v_coeff
 d_theta_dx = 1.01e-4  # TODO np.linspace(1, 5, 10)*10**-4 # deg C/m, horizontal temperature gradient
 surface_slope = 0.1e-5  # TODO np.linspace(0.1, 1, 10)*10**-5  # dzs_dx
 Qgeo = 42e-3  # TODO np.linspace(30, 70, 10)*10**-3, W/m^2, Geothermal heat flow
-z_b = 0.0  # bottom
-z_s = 1500.0  # surface
 mesh_node_count = 20
 
+## Constants, pretty much
+z_b = 0.0  # bottom
+z_s = 1500.0  # surface
 k = 2.1  # W/(m*K), thermal diffusivity of ice
 rho = 600.0  # kg/m^3, density of firn
-rho = 911.0  # kg/m^3, Density of ice
+# rho = 911.0  # kg/m^3, Density of ice
 Cp = 2009.0  # J/(kg*K), Heat capacity
 g = 9.81  # m/s^2 accel due to gravity
-
 beta = 9.8e-8  # K/Pa, Pressure dependence of melting point
 
 
@@ -43,7 +55,6 @@ def theta_pmp(z_arr):
 
 # Create mesh and define function space
 mesh = Interval(mesh_node_count, z_b, z_s)
-# mesh.coordinates[:] *= ice_thickness
 node_coords = mesh.coordinates()
 print 'node_coords', node_coords
 theta_pmp_arr = theta_pmp(node_coords)
@@ -94,15 +105,17 @@ diffusion_term = theta*v + \
     (k/rho/Cp) * inner(nabla_grad(theta), nabla_grad(v))*dt
 # Either of the following seem to work in v1.0.0
 # NOTE: Seems that we shouldn't negate w here
-vertical_advection = 0#inner(w, nabla_grad(theta)) * v * dt
+vertical_advection = inner(w, nabla_grad(theta)) * v * dt
 # vertical_advection = w * nabla_grad(theta) * v * dt  # doesn't work in v1.1.0
-horiz_advection = 0#-u * d_theta_dx * v * dt
-strain_heating = 0#phi/rho/Cp * Expression(u_prime)/spy * v * dt
+horiz_advection = -u * d_theta_dx * v * dt
+strain_heating = phi/rho/Cp * Expression(u_prime)/spy * v * dt
 
 a = (diffusion_term + vertical_advection)*dx
 # L = (theta_1 - u*d_theta_dx*dt + phi/rho/Cp * dt)*v*dx + neumann_bc
-L = (theta_1*v + horiz_advection + strain_heating)*dx + neumann_bc
-
+def assign_rhs():
+    global L
+    L = (theta_1*v + horiz_advection + strain_heating)*dx + neumann_bc
+assign_rhs()
 
 A = assemble(a)   # assemble only once, before the time stepping
 b = None          # necessary for memory saving assemeble call
@@ -136,5 +149,13 @@ while t <= total_sim_time:
 
     t += dt
     theta_1.assign(theta)
+
+    # Add global warming
+    if do_warming and t >= time_at_which_to_warm:
+        do_warming = False
+        theta_0.t0 = temp_to_warm_to
+        # # The following changes the values throughout, rather than just at the surface
+        # theta_1 = interpolate(Constant(temp_to_warm_to), func_space)
+        # assign_rhs()
 
 interactive()
