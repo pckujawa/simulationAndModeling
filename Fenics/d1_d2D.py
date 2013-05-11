@@ -230,12 +230,22 @@ def run_sim(do_plot=True, verify=False):
     return is_water_at_base
 
 water_mask = []
-num_points = 10
-for z_s in np.linspace(200, 1500, num_points):
+num_points = 4
+#for z_s in np.linspace(200, 1500, num_points):
+for u_mult in np.linspace(20, 100, num_points):
+    print "z_s: " + str(z_s)
     row = []
-    for qgeo in np.linspace(30, 70, num_points):
+    for qgeo in np.linspace(30e-3, 70e-3, num_points):
+    #for u_mult in np.linspace(20, 100, num_points):
+    #for w_mult in np.linspace(0.1, 0.5, num_points): 
+    #for d_theta_dx in np.linspace(1e-4, 5e-4, num_points):
         is_water_at_base = run_sim(do_plot=False, verify=False)
         row.append(is_water_at_base)
     water_mask.append(row)
 
-np.save('z_s from 200 to 1500, qgeo from 30 to 70', np.array(water_mask))
+#np.save('z_s from 200 to 1500, qgeo from 30 to 70', np.array(water_mask))
+#np.save('z_s200-1500_u20-100', np.array(water_mask))
+#np.save('z_s200-1500_w0.01-0.5', np.array(water_mask))
+#np.save('z_s200-1500_dthetadx1-5', np.array(water_mask))
+np.save('umult20-100_qgeo30-70', np.array(water_mask))
+print np.array(water_mask)
