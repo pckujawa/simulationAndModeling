@@ -36,7 +36,7 @@ globals().update(consts_dict)  # put constants into global namespace
 
 ## Variables (defaults pulled from INI file)
 time_at_which_to_warm *= spy  # after equilibrium, add warming
-do_warming = bool(time_at_which_to_warm)  # later changed/used as a signal
+do_warming = False#bool(time_at_which_to_warm)  # later changed/used as a signal
 temperature_0 = get_arg(1, temperature_0)  # constant added to sin function
 dt = get_arg(2, dt) * spy
 total_sim_time = get_arg(3, total_sim_time) * spy
@@ -69,9 +69,49 @@ def theta_pmp(z_arr):
     return beta * rho * g * (z_arr - z_s)  # deg C, Pressure melting point of ice
 
 # Create mesh and define function space
+
+# inputs:
+#       ps: Percentage of nodes to place at the surface, value on the interval [0., 1.]
+#       pb: Percentage of nodes to place at the base, value on the interval [0., 1.]
+#       ds: Distance from the surface to place the ps nodes, value on the interval [0., s-b]
+#       db: Distance from the bed to place the pb nodes, value on the interval [0., s-b]
+#
+# Example:
+#       Suppose we have 100 nodes, and our ice sheet is 1000m tall.
+#       We wish to have 40 nodes in the top ds = 200m, and 30 nodes in the bottom db = 300m.
+#       ps = 40 / 100 = 0.4
+#       pb = 30 / 100 = 0.3
+#       These parameters will set 40 nodes in a linspace between the surface and 200m below the
+#       surface, 30 nodes in a linspace between the base and 300m above the base, and places
+#       the remaining 30 nodes in the space between.
+def make_denser(mesh, ps = 0.4, pb = 0.1, ds = 150, db = 200):
+    xs = mesh.coordinates()
+    nx = len(xs)
+    b = xs[0]
+    s = xs[-1]
+    ns = ps*nx
+    nb = pb*nx
+
+    if ds + db >= s - b:
+        print 'ds + db must be less than s - b!'
+        return xs
+    if ps + pb > 1:
+        print 'ps + pb must be less than 1!'
+        return xs
+
+    print 'NUMBER: ', ds/ns
+    xs = np.linspace(s-ds, s, ns + 1)
+    xb = np.linspace(b, db, nb + 1)
+    xm = np.linspace(db, s-ds, nx-nb-ns + 1)
+
+    # ERROR output operand requires a reduction, but reduction is not enabled
+    mesh.coordinates()[:] = np.concatenate([xb, xm[1:-1], xs]).transpose()
+
 mesh = Interval(mesh_node_count, z_b, z_s)
+# make_denser(mesh)
 node_coords = mesh.coordinates()
 print 'node_coords', node_coords
+
 theta_pmp_arr = theta_pmp(node_coords)
 theta_pmp_arr = theta_pmp_arr.reshape(theta_pmp_arr.size, )
 # NOTE: Need to reshape array to match nodes shape
@@ -112,21 +152,21 @@ w = Expression(w_str, m=w_mult, spy=spy)  # m/annum, vertical ice velocity
 phi = Expression('-p*g*(zs-x[0])*{du_dz}*dzs_dx'.format(du_dz=u_prime),
                  p=rho, g=g, zs=z_s, dzs_dx=surface_slope)  # W/m^3, heat sources from deformation of ice
 
-bed_boundary = Expression('1 - {s}'.format(s=sigma))
-neumann_bc = qgeo/rho/cp * dt * bed_boundary * v * ds
-# neumann_bc = g * dt * v * ds  # Will's code
-
+## LHS
 diffusion_term = theta*v + \
     (k/rho/cp) * inner(nabla_grad(theta), nabla_grad(v))*dt
 # Either of the following seem to work in v1.0.0
 # NOTE: Seems that we shouldn't negate w here
 vertical_advection = inner(w, nabla_grad(theta)) * v * dt
 # vertical_advection = w * nabla_grad(theta) * v * dt  # doesn't work in v1.1.0
+
+## RHS
 horiz_advection = -u * d_theta_dx * v * dt
 strain_heating = phi/rho/cp * Expression(u_prime)/spy * v * dt
+bed_boundary = Expression('1 - {s}'.format(s=sigma))
+neumann_bc = qgeo/rho/cp * dt * bed_boundary * v * ds
 
 a = (diffusion_term + vertical_advection)*dx
-# L = (theta_1 - u*d_theta_dx*dt + phi/rho/cp * dt)*v*dx + neumann_bc
 L = (theta_1*v + horiz_advection + strain_heating)*dx + neumann_bc
 
 A = assemble(a)   # assemble only once, before the time stepping
@@ -136,7 +176,6 @@ theta = Function(func_space)   # the unknown at a new time level
 
 ## Time loop
 t = dt
-out_file = File("results/theta.pvd")
 while t <= total_sim_time:
     print 'time = {t:.1f} years'.format(t=t / spy)
     b = assemble(L, tensor=b)
@@ -155,7 +194,6 @@ while t <= total_sim_time:
 
     # TODO can we set the x,ylim?
     plot(theta, title=naming_parameters_str)  # transpose of the plot we want
-    out_file << (theta, t)
 
     # Verify
     u_e = interpolate(theta_0, func_space)
@@ -169,5 +207,8 @@ while t <= total_sim_time:
     if do_warming and t >= time_at_which_to_warm:
         do_warming = False
         theta_0.t0 = temp_to_warm_to
+
+# Output boolean arrays for PMP
+
 
 interactive()
